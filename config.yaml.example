@@ -1,0 +1,51 @@
+database:
+  url: "sqlite:///./pelis_feed.db"
+  # Alternative: "mysql+pymysql://user:pass@localhost/pelis_feed"
+
+feed:
+  url: "https://yts.mx/rss"
+  poll_interval_hours: 2
+
+alerting:
+  smtp_host: "localhost"
+  smtp_port: 25
+  from_address: "pelis-feed@localhost"
+  to_address: "user@localhost"
+  downtime_threshold_hours: 24
+
+enrichment:
+  source: "omdb"
+  api_key: ""
+  timeout_seconds: 10
+
+filtering:
+  default:
+    min_imdb: 6.0
+    min_rt_expert: 60
+    min_rt_audience: 50
+  genres:
+    action:
+      min_imdb: 5.5
+    romantic_comedy:
+      min_imdb: 5.0
+    documentary:
+      min_imdb: 7.0
+      min_rt_expert: 80
+  older_movies:
+    min_imdb: 7.5
+    min_rt_expert: 75
+    year_threshold: 6
+
+genre_priority:
+  - action
+  - romantic_comedy
+  - thriller
+  - sci-fi
+  - drama
+  - horror
+  - comedy
+  - documentary
+
+webapp:
+  host: "127.0.0.1"
+  port: 8080
