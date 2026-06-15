@@ -4,39 +4,43 @@
 
 ### In scope
 - RSS feed ingestion from `https://yts.ag/rss` (cron-triggered CLI)
-- Scheduled polling (~2 hours via system cron)
+- News RSS/Atom feed ingestion — unfiltered, filtered, and AI-filtered types
+- Scheduled polling (~2 hours via system cron) for all feeds
 - SQLite/MySQL database for persistent storage (dual-backend)
 - Rating enrichment from free sources (IMDb, RT expert, RT audience)
-- FastAPI web application for filtered movie browsing
+- CLI Filter Processor — regex filter against `filters` table; Claude CLI for AI-filtered feeds
+- FastAPI web application for filtered movie browsing and news reading
 - Configurable genre-specific filtering rules (config file)
-- Read-tracking via web UI (persisted in DB)
-- Email alerting (local SMTP) when feed is down >24h
+- Config-driven news feed and filter definitions synced to `filters` table
+- Read-tracking via web UI (persisted in DB) for movies and news
+- Email alerting (local SMTP) when any feed is down >24h
 
 ### Out of scope
 - Downloading or streaming movies
 - Multi-user support / authentication
 - Mobile notifications
 - Deployment to cloud/remote servers (local only)
-- Paid API integrations
+- Paid API integrations (except Claude CLI for AI-filtered feeds)
 
 ## 2) Milestones
 
 | Milestone | Deliverable | Owner |
 |---|---|---|
-| M1 — Ingestion | CLI process fetches RSS, parses entries, stores in DB. Deduplication works. | Self |
+| M1 — Ingestion | CLI Ingester fetches movie RSS, parses entries, stores in DB. Deduplication works. | Self |
 | M2 — Enrichment | Movies are enriched with IMDb + RT ratings from free sources. Failures handled gracefully. | Self |
-| M3 — Web Application | FastAPI app serves filtered, grouped movie view. Read-tracking works. | Self |
+| M3 — Web Application (Movies) | FastAPI app serves filtered, grouped movie view. Read-tracking works. | Self |
 | M4 — Alerting + Polish | Email alerts on feed downtime >24h. Config-driven filtering is tunable. | Self |
+| M5 — News Feeds | CLI Ingester fetches news feeds. CLI Filter Processor applies regex and AI filtering. News tab in web UI with read tracking and AI-filtered sub-views. | Self |
 
 ## 3) Work Breakdown (Epics → Stories)
 
 ### Epic 1: Ingestion (M1)
-- **Story 1.1:** Set up project structure, dependencies, and config loading (FR-016, C-001, C-007)
-- **Story 1.2:** Implement RSS feed fetcher with error handling (FR-001, NFR-001)
+- **Story 1.1:** Set up three-process project structure, dependencies, and config loading (FR-016, C-001, C-003, C-007)
+- **Story 1.2:** Implement movie RSS feed fetcher with error handling (FR-001, NFR-001)
 - **Story 1.3:** Implement database layer with SQLite backend (FR-002, C-002)
 - **Story 1.4:** Add MySQL backend support behind same interface (FR-002, C-002)
 - **Story 1.5:** Implement deduplication logic — same name/URL merges qualities (FR-003)
-- **Story 1.6:** Track feed health — record last successful fetch timestamp (FR-008)
+- **Story 1.6:** Track feed health — record last successful fetch timestamp per feed (FR-008)
 
 ### Epic 2: Enrichment (M2)
 - **Story 2.1:** Research and select free rating source(s) — OMDb free tier, TMDb, imdbapi.dev (Q-001)
@@ -44,8 +48,8 @@
 - **Story 2.3:** Implement RT expert + audience rating enrichment (FR-010, FR-011)
 - **Story 2.4:** Graceful failure handling — skip enrichment on errors, retry later (FR-012)
 
-### Epic 3: Web Application (M3)
-- **Story 3.1:** FastAPI app skeleton with Jinja2 templates (C-003, C-006)
+### Epic 3: Web Application — Movies (M3)
+- **Story 3.1:** FastAPI app skeleton with Movies tab (C-003, C-006)
 - **Story 3.2:** Implement filtering logic — genre-specific rating thresholds from config (FR-005, FR-016)
 - **Story 3.3:** Implement grouping — same-name movies show together (FR-006)
 - **Story 3.4:** Implement year sections (2026→2021) with older movies in summary section (FR-013, FR-014)
@@ -57,9 +61,23 @@
 - **Story 4.2:** Send email alert via local SMTP (FR-007, C-005)
 - **Story 4.3:** Verify end-to-end flow: ingest → enrich → serve → track
 
+### Epic 5: News Feed Ingestion (M5)
+- **Story 5.1:** Extend config schema for news feed definitions with `type` field; sync `filters` table at filter processor startup (FR-019, C-007)
+- **Story 5.2:** CLI Ingester — fetch news RSS/Atom feeds, store all items to `news_items` (FR-020, FR-021, FR-026)
+- **Story 5.3:** CLI Filter Processor — regex pass: match items against `filters` table, write `matched_filter_id` FK (FR-022)
+- **Story 5.4:** CLI Filter Processor — AI pass: collect unprocessed and unread items, invoke Claude CLI with context, upsert `ai_filtered_views` (FR-023, FR-024, NFR-005, C-008)
+- **Story 5.5:** Extend feed health tracking and email alerting to all news feeds (FR-025, FR-007)
+
+### Epic 6: News Web UI (M5)
+- **Story 6.1:** Add News tab to FastAPI web app (FR-028)
+- **Story 6.2:** Implement read/unread tracking for news items and AI-filtered views (FR-029)
+- **Story 6.3:** Filtered feed view — show only items with non-null `matched_filter_id`, display filter name (FR-030)
+- **Story 6.4:** AI-filtered feed view — from `ai_filtered_views` with category, summary, tags (FR-031)
+- **Story 6.5:** Raw unprocessed sub-view for AI-filtered feeds — all `news_items` for that feed (FR-032)
+
 ## 4) Dependencies
 - **External teams:** None (solo project)
-- **Vendors:** Free-tier API access (OMDb/TMDb/imdbapi.dev) — no sign-up may be needed depending on source
+- **Vendors:** Free-tier API access (OMDb/TMDb/imdbapi.dev); Claude CLI installed and authenticated on local machine (C-008)
 - **Environments:** Local machine with Python, system cron, local SMTP server
 - **Approvals:** None
 
@@ -71,11 +89,15 @@
 | Filter tuning difficulty | Genre-specific thresholds hard to calibrate initially | Make thresholds easily adjustable via config; iterate after first data |
 | Free rating APIs may be unreliable | Missing or stale ratings | Support multiple sources; graceful fallback; enrich asynchronously |
 | YTS RSS feed format changes | Ingestion breaks silently | Validate parsed fields; alert on parse failures |
+| Claude CLI not installed/authenticated | AI-filtered feeds silently fail | Check at filter processor startup; log clearly and skip feed rather than crash |
+| Claude CLI output schema variability | Parsing failures, data loss | Enforce strict JSON schema in prompt; validate response before persisting |
+| News RSS format variability (Atom vs RSS 2.0) | Parser fails on some feeds | Use `feedparser` library; log unparseable items and skip |
+| AI processing latency | Filter processor blocks cron cycle | Configurable timeout per feed (NFR-005); log and skip on timeout |
 
 ## 6) Rollout strategy
 - **Direct local deploy** — no staged rollout needed for personal project
-- **Cron setup:** Add cron job for ingestion CLI after M1 is verified working
-- **Web app:** Run locally on-demand (`pelis serve`) after M3
+- **Cron setup:** Add cron job running ingester then filter processor sequentially after M1/M5 are verified
+- **Web app:** Run locally on-demand after M3
 - **Rollback:** Git-based — revert to previous commit if needed
 
 ## 7) Definition of Done (DoD)

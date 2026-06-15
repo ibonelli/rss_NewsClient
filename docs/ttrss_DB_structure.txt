@@ -1,0 +1,127 @@
+DB> show tables;
++--------------------------+
+| Tables_in_ttrssdb        |
++--------------------------+
+| ttrss_access_keys        |
+| ttrss_app_passwords      |
+| ttrss_archived_feeds     |
+| ttrss_cat_counters_cache |
+| ttrss_counters_cache     |
+| ttrss_enclosures         |
+| ttrss_entries            |
+| ttrss_entry_comments     |
+| ttrss_error_log          |
+| ttrss_feed_categories    |
+| ttrss_feedbrowser_cache  |
+| ttrss_feeds              |
+| ttrss_filter_actions     |
+| ttrss_filter_types       |
+| ttrss_filters2           |
+| ttrss_filters2_actions   |
+| ttrss_filters2_rules     |
+| ttrss_labels2            |
+| ttrss_linked_feeds       |
+| ttrss_linked_instances   |
+| ttrss_plugin_storage     |
+| ttrss_prefs              |
+| ttrss_prefs_sections     |
+| ttrss_prefs_types        |
+| ttrss_sessions           |
+| ttrss_settings_profiles  |
+| ttrss_tags               |
+| ttrss_user_entries       |
+| ttrss_user_labels2       |
+| ttrss_user_prefs         |
+| ttrss_user_prefs2        |
+| ttrss_users              |
+| ttrss_version            |
++--------------------------+
+
+DB> EXPLAIN ttrss_feeds;
++---------------------------+--------------+------+-----+---------+----------------+
+| Field                     | Type         | Null | Key | Default | Extra          |
++---------------------------+--------------+------+-----+---------+----------------+
+| id                        | int(11)      | NO   | PRI | NULL    | auto_increment |
+| owner_uid                 | int(11)      | NO   | MUL | NULL    |                |
+| title                     | varchar(200) | NO   |     | NULL    |                |
+| cat_id                    | int(11)      | YES  | MUL | NULL    |                |
+| feed_url                  | text         | NO   | MUL | NULL    |                |
+| icon_url                  | varchar(250) | NO   |     |         |                |
+| update_interval           | int(11)      | NO   |     | 0       |                |
+| purge_interval            | int(11)      | NO   |     | 0       |                |
+| last_updated              | datetime     | YES  |     | NULL    |                |
+| last_error                | varchar(250) | NO   |     |         |                |
+| favicon_avg_color         | varchar(11)  | YES  |     | NULL    |                |
+| site_url                  | varchar(250) | NO   |     |         |                |
+| auth_login                | varchar(250) | NO   |     |         |                |
+| auth_pass                 | varchar(250) | NO   |     |         |                |
+| parent_feed               | int(11)      | YES  | MUL | NULL    |                |
+| private                   | tinyint(1)   | NO   |     | 0       |                |
+| rtl_content               | tinyint(1)   | NO   |     | 0       |                |
+| hidden                    | tinyint(1)   | NO   |     | 0       |                |
+| include_in_digest         | tinyint(1)   | NO   |     | 1       |                |
+| cache_images              | tinyint(1)   | NO   |     | 0       |                |
+| hide_images               | tinyint(1)   | NO   |     | 0       |                |
+| cache_content             | tinyint(1)   | NO   |     | 0       |                |
+| auth_pass_encrypted       | tinyint(1)   | NO   |     | 0       |                |
+| last_viewed               | datetime     | YES  |     | NULL    |                |
+| last_update_started       | datetime     | YES  |     | NULL    |                |
+| always_display_enclosures | tinyint(1)   | NO   |     | 0       |                |
+| update_method             | int(11)      | NO   |     | 0       |                |
+| order_id                  | int(11)      | NO   |     | 0       |                |
+| mark_unread_on_update     | tinyint(1)   | NO   |     | 0       |                |
+| update_on_checksum_change | tinyint(1)   | NO   |     | 0       |                |
+| strip_images              | tinyint(1)   | NO   |     | 0       |                |
+| view_settings             | varchar(250) | NO   |     |         |                |
+| pubsub_state              | int(11)      | NO   |     | 0       |                |
+| favicon_last_checked      | datetime     | YES  |     | NULL    |                |
+| feed_language             | varchar(100) | NO   |     |         |                |
+| last_modified             | varchar(250) | NO   |     |         |                |
+| last_unconditional        | datetime     | YES  |     | NULL    |                |
+| last_successful_update    | datetime     | YES  |     | NULL    |                |
+| favicon_is_custom         | tinyint(1)   | YES  |     | NULL    |                |
++---------------------------+--------------+------+-----+---------+----------------+
+
+DB> SELECT * FROM ttrss_feeds LIMIT 0,5;
++----+-----------+--------------------------------+--------+-----------------------------------------------+----------+-----------------+----------------+---------------------+------------------------------------------+-------------------+------------------------------------+------------+-----------+-------------+---------+-------------+--------+-------------------+--------------+-------------+---------------+---------------------+---------------------+---------------------+---------------------------+---------------+----------+-----------------------+---------------------------+--------------+---------------+--------------+----------------------+---------------+-------------------------------+---------------------+------------------------+-------------------+
+| id | owner_uid | title                          | cat_id | feed_url                                      | icon_url | update_interval | purge_interval | last_updated        | last_error                               | favicon_avg_color | site_url                           | auth_login | auth_pass | parent_feed | private | rtl_content | hidden | include_in_digest | cache_images | hide_images | cache_content | auth_pass_encrypted | last_viewed         | last_update_started | always_display_enclosures | update_method | order_id | mark_unread_on_update | update_on_checksum_change | strip_images | view_settings | pubsub_state | favicon_last_checked | feed_language | last_modified                 | last_unconditional  | last_successful_update | favicon_is_custom |
++----+-----------+--------------------------------+--------+-----------------------------------------------+----------+-----------------+----------------+---------------------+------------------------------------------+-------------------+------------------------------------+------------+-----------+-------------+---------+-------------+--------+-------------------+--------------+-------------+---------------+---------------------+---------------------+---------------------+---------------------------+---------------+----------+-----------------------+---------------------------+--------------+---------------+--------------+----------------------+---------------+-------------------------------+---------------------+------------------------+-------------------+
+|  6 |         1 | Planet Debian                  |      2 | http://planet.debian.org/rss20.xml            |          |              -1 |             90 | NULL                |                                          | #cc0033           | http://planet.debian.org/          |            |           |        NULL |       0 |           0 |      0 |                 1 |            0 |           0 |             0 |                   0 | 2022-06-13 19:50:56 | 2014-10-01 00:19:56 |                         0 |             0 |        6 |                     0 |                         0 |            0 |               |            0 | 2014-10-01 00:19:56  |               |                               | NULL                | NULL                   |              NULL |
+|  7 |         1 | Debian SysAdmin                |      2 | http://www.debian-administration.org/atom.xml |          |              -1 |             90 | 2020-12-04 06:00:06 | HTTP/1.1 410 Gone; Undefined index: port | #cc0033           | https://debian-administration.org/ |            |           |        NULL |       0 |           0 |      0 |                 1 |            0 |           0 |             0 |                   0 | 2026-05-15 18:24:04 | 2020-12-04 06:00:04 |                         0 |             0 |        4 |                     0 |                         0 |            0 |               |            0 | 2020-11-04 01:30:12  |               |                               | 2020-11-06 03:00:05 | 2020-11-04 06:00:02    |              NULL |
+|  8 |         1 | Debian News                    |      2 | http://www.debian.org/News/news               |          |               0 |             90 | 2026-06-14 20:39:44 |                                          | #cc0033           | https://www.debian.org/News/       |            |           |        NULL |       0 |           0 |      0 |                 1 |            0 |           0 |             0 |                   0 | 2026-06-12 14:22:44 | 2026-06-14 20:39:43 |                         0 |             0 |        2 |                     0 |                         0 |            0 |               |            0 | 2021-06-27 22:30:02  |               | Wed, 03 Jun 2026 23:27:08 GMT | 2026-06-14 15:38:45 | 2026-06-14 20:39:44    |              NULL |
+| 11 |         1 | Dotpod                         |      3 | http://feeds.feedburner.com/dotpod            |          |              -1 |             90 | 1970-01-01 00:00:00 |                                          |                   | http://www.dotpod.com.ar           |            |           |        NULL |       0 |           0 |      0 |                 1 |            0 |           0 |             0 |                   0 | 2026-04-28 15:16:10 | 1970-01-01 00:00:00 |                         0 |             0 |       19 |                     0 |                         0 |            0 |               |            0 | 2021-06-27 18:00:08  |               | Thu, 12 Aug 2021 13:36:39 GMT | 2021-08-12 13:36:51 | 2021-08-12 13:36:51    |              NULL |
+| 13 |         1 | PCMag.com: New Product Reviews |      3 | http://feeds2.feedburner.com/ziffdavis/pcmag  |          |              -1 |             90 | NULL                |                                          | #cc0000           | http://www.pcmag.com               |            |           |        NULL |       0 |           0 |      0 |                 1 |            0 |           0 |             0 |                   0 | 2024-06-05 21:00:25 | 2014-10-01 01:30:01 |                         0 |             0 |       20 |                     0 |                         0 |            0 |               |            0 | 2014-10-01 00:20:04  |               |                               | NULL                | NULL                   |              NULL |
++----+-----------+--------------------------------+--------+-----------------------------------------------+----------+-----------------+----------------+---------------------+------------------------------------------+-------------------+------------------------------------+------------+-----------+-------------+---------+-------------+--------+-------------------+--------------+-------------+---------------+---------------------+---------------------+---------------------+---------------------------+---------------+----------+-----------------------+---------------------------+--------------+---------------+--------------+----------------------+---------------+-------------------------------+---------------------+------------------------+-------------------+
+
+DB> EXPLAIN ttrss_entries;
++----------------+--------------+------+-----+---------+----------------+
+| Field          | Type         | Null | Key | Default | Extra          |
++----------------+--------------+------+-----+---------+----------------+
+| id             | int(11)      | NO   | PRI | NULL    | auto_increment |
+| title          | text         | NO   |     | NULL    |                |
+| guid           | varchar(255) | NO   | UNI | NULL    |                |
+| link           | text         | NO   |     | NULL    |                |
+| updated        | datetime     | NO   | MUL | NULL    |                |
+| content        | longtext     | NO   |     | NULL    |                |
+| content_hash   | varchar(250) | NO   |     | NULL    |                |
+| cached_content | longtext     | YES  |     | NULL    |                |
+| no_orig_date   | tinyint(1)   | NO   |     | 0       |                |
+| date_entered   | datetime     | NO   | MUL | NULL    |                |
+| date_updated   | datetime     | NO   |     | NULL    |                |
+| num_comments   | int(11)      | NO   |     | 0       |                |
+| plugin_data    | longtext     | YES  |     | NULL    |                |
+| lang           | varchar(2)   | YES  |     | NULL    |                |
+| comments       | varchar(250) | NO   |     |         |                |
+| author         | varchar(250) | NO   |     |         |                |
++----------------+--------------+------+-----+---------+----------------+
+
+DB> SELECT id,title,link,updated,LEFT(content, 16) AS content_truncated,content_hash,cached_content,no_orig_date,date_entered,date_updated,num_comments,plugin_data,lang,comments,author FROM ttrss_entries LIMIT 0,5;
++----+----------------------------------------------------------------------------------------------+------------------------------------------------------------------------------------+---------------------+----------------------+-----------------------------------------------+----------------+--------------+---------------------+---------------------+--------------+-------------+------+----------+-------------------------------------------------------------+
+| id | title                                                                                        | link                                                                               | updated             | content_truncated    | content_hash                                  | cached_content | no_orig_date | date_entered        | date_updated        | num_comments | plugin_data | lang | comments | author                                                      |
++----+----------------------------------------------------------------------------------------------+------------------------------------------------------------------------------------+---------------------+----------------------+-----------------------------------------------+----------------+--------------+---------------------+---------------------+--------------+-------------+------+----------+-------------------------------------------------------------+
+| 51 | Lisandro Dami&aacute;n Nicanor P&eacute;rez Meyer: Qt5 in Jessie: we will release with 5.3.2 | http://perezmeyer.blogspot.com/2014/09/qt5-in-jessie-we-will-release-with-532.html | 2014-09-30 17:08:00 |   <img src="http ... | SHA1:8d846a32357bc7479141cb5cca6998d6163a2bf2 | NULL           |            0 | 2014-10-01 00:19:00 | 2014-10-01 00:19:56 |            0 |             |      |          | noreply@blogger.com (Lisandro Damián Nicanor Pérez Meyer)   |
+| 52 | Gunnar Wolf: Diego Gómez: Imprisoned for sharing                                             | http://gwolf.org/node/3954                                                         | 2014-09-30 14:01:13 |   <img src="http ... | SHA1:2b4827f684fa1f7644d700e4976a68e3ba154d68 | NULL           |            0 | 2014-10-01 00:19:00 | 2014-10-01 00:19:56 |            0 |             |      |          |                                                             |
+| 53 | Russell Coker: Links September 2014                                                          | http://etbe.coker.com.au/2014/09/30/links-september-2014/                          | 2014-09-30 13:55:48 |   <p><a href="ht ... | SHA1:7d2cec863a1da8fe4bab767684a2bf323fcee9e2 | NULL           |            0 | 2014-10-01 00:19:00 | 2014-10-01 00:19:56 |            0 |             |      |          |                                                             |
+| 54 | Rapha&#235;l Hertzog: My Debian LTS report for September                                     | http://raphaelhertzog.com/2014/09/30/my-debian-lts-report-for-september/           | 2014-09-30 13:24:25 |   <img src="http ... | SHA1:f06d5a309d56484d82ad4a7a9a4e0a1e9c86d650 | NULL           |            0 | 2014-10-01 00:19:00 | 2014-10-01 00:19:56 |            0 |             |      |          |                                                             |
+| 55 | Mario Lang: A simple C++11 concurrent workqueue                                              | http://blind.guru/simple_cxx11_workqueue.html                                      | 2014-09-30 12:20:00 |   <img src="http ... | SHA1:01e2360ef744cbe78c8eb1372a832b013b285340 | NULL           |            0 | 2014-10-01 00:19:00 | 2014-10-01 00:19:56 |            0 |             |      |          |                                                             |
++----+----------------------------------------------------------------------------------------------+------------------------------------------------------------------------------------+---------------------+----------------------+-----------------------------------------------+----------------+--------------+---------------------+---------------------+--------------+-------------+------+----------+-------------------------------------------------------------+

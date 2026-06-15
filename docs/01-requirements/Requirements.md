@@ -97,3 +97,4 @@
 - **Q-005:** What is the expected JSON schema for Claude CLI input/output for AI-filtered feeds? (needs definition before implementation)
 - **Q-006:** Should AI-filtered feeds optionally pre-filter with a regex before sending to Claude, or always send all items?
 - **Q-007:** How should the News tab organize items within each feed — by date, by category, or configurable?
+- ~~**Q-008:** Resolved — no `ai_status` field; items Claude does not return simply have no `ai_filtered_views` row and do not surface in the filtered view.~~
