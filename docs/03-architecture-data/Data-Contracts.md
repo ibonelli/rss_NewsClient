@@ -3,16 +3,28 @@
 ## 1) Entities
 
 ### Movie
-
 - **Definition:** A movie entry discovered from the YTS RSS feed, potentially with multiple quality/resolution variants
-- **Owner:** CLI Ingester (creates/updates), Web App (reads, marks as read, triggers enrichment)
-- **Versioning:** No formal versioning — schema changes handled via SQLAlchemy `create_all()`
+- **Owner:** CLI Ingester (creates/updates); Web UI (reads, marks as read, triggers enrichment)
 
 ### FeedHealth
+- **Definition:** One row per configured feed tracking last success, last attempt, and error state. Used for downtime detection and alerting.
+- **Owner:** CLI Ingester (writes); Web UI (reads); Alerter (reads for threshold check)
 
-- **Definition:** Tracks the operational status of the RSS feed (last success, last attempt, errors)
-- **Owner:** CLI Ingester (writes), Web App (reads for display), Alerting logic (reads for threshold check)
-- **Versioning:** Single-row table, no versioning needed
+### NewsItem
+- **Definition:** A raw news item fetched from any news feed type (unfiltered, filtered, or AI-filtered). All items are stored regardless of type.
+- **Owner:** CLI Ingester (creates); CLI Filter Processor (updates `matched_filter_id`); Web UI (reads, marks as read)
+
+### Filter
+- **Definition:** A named regex pattern associated with a specific filtered feed. Synced from config on each Filter Processor run.
+- **Owner:** CLI Filter Processor (syncs from config); Web UI (reads for display)
+
+### Category
+- **Definition:** A normalized free-form category label assigned by Claude CLI. New values are upserted by the Filter Processor as they appear in Claude output.
+- **Owner:** CLI Filter Processor (creates); Web UI (reads for display and grouping)
+
+### AIFilteredView
+- **Definition:** The AI-processed result for a news item that Claude chose to surface. One row per news item Claude returned. Absence means the item was not returned (filtered out or not yet processed).
+- **Owner:** CLI Filter Processor (creates/updates); Web UI (reads, marks as read, sets keep_as_context)
 
 ## 2) Schema (SQLAlchemy Models)
 
@@ -22,29 +34,31 @@
 class Movie(Base):
     __tablename__ = "movies"
 
-    id: int                    # PK, auto-increment
-    title: str                 # NOT NULL, max 500 chars
-    year: int                  # NOT NULL, 4-digit year
-    genres: str                # NOT NULL, JSON array stored as text (e.g., '["Action", "Thriller"]')
-    torrent_url: str           # NOT NULL, unique identifier for deduplication
-    qualities: str             # JSON array (e.g., '["720p", "1080p", "2160p"]')
-    imdb_rating: float | None  # 0.0–10.0, nullable (not yet enriched)
-    rt_expert_rating: int | None    # 0–100, nullable
-    rt_audience_rating: int | None  # 0–100, nullable
-    poster_url: str | None     # nullable, URL to movie poster
-    feed_entry_date: datetime  # when the RSS entry was published
-    enrichment_date: datetime | None  # when ratings were last fetched, nullable
-    enrichment_error: str | None     # last enrichment error message, nullable
-    is_read: bool              # default False
-    created_at: datetime       # auto-set on insert
-    updated_at: datetime       # auto-set on insert and update
+    id: int                           # PK, auto-increment
+    title: str                        # NOT NULL, max 500 chars
+    year: int                         # NOT NULL, 4-digit year
+    genres: str                       # NOT NULL, JSON array as text e.g. '["Action","Thriller"]'
+    torrent_url: str                  # NOT NULL, UNIQUE — primary dedup key
+    qualities: str                    # JSON array as text e.g. '["720p","1080p"]'
+    imdb_rating: float | None         # 0.0–10.0, nullable (not yet enriched)
+    rt_expert_rating: int | None      # 0–100, nullable
+    rt_audience_rating: int | None    # 0–100, nullable
+    poster_url: str | None            # nullable, URL to movie poster
+    feed_entry_date: datetime         # when the RSS entry was published
+    enrichment_date: datetime | None  # when ratings were last fetched
+    enrichment_error: str | None      # last enrichment error message, nullable
+    is_read: bool                     # default False
+    created_at: datetime              # auto-set on insert
+    updated_at: datetime              # auto-set on insert and update
 ```
 
 **Indexes:**
-- `ix_movies_title_year` on (title, year) — for deduplication lookups
-- `ix_movies_torrent_url` UNIQUE on torrent_url — primary deduplication key
-- `ix_movies_year` on year — for year-section queries
-- `ix_movies_is_read` on is_read — for filtering out read movies
+- `ix_movies_torrent_url` UNIQUE on `torrent_url` — primary dedup key
+- `ix_movies_title_year` on `(title, year)` — secondary dedup lookup
+- `ix_movies_year` on `year` — year-section queries
+- `ix_movies_is_read` on `is_read` — filter out read movies
+
+---
 
 ### FeedHealth
 
@@ -52,13 +66,106 @@ class Movie(Base):
 class FeedHealth(Base):
     __tablename__ = "feed_health"
 
-    id: int                    # PK (always 1 — single row)
+    id: int                           # PK, auto-increment
+    feed_name: str                    # NOT NULL, UNIQUE — matches feed name in config
     last_success_at: datetime | None  # last successful fetch timestamp
     last_attempt_at: datetime | None  # last fetch attempt timestamp
-    last_error: str | None     # error message from last failed attempt
-    consecutive_failures: int  # counter, reset on success
-    alert_sent_at: datetime | None  # when the last downtime alert was sent
+    last_error: str | None            # error message from last failed attempt
+    consecutive_failures: int         # reset to 0 on success
+    alert_sent_at: datetime | None    # when the last downtime alert was sent
 ```
+
+**Indexes:**
+- `ix_feed_health_feed_name` UNIQUE on `feed_name`
+
+One row per configured feed (movie feed + each news feed). Upserted by the Ingester on each run.
+
+---
+
+### NewsItem
+
+```python
+class NewsItem(Base):
+    __tablename__ = "news_items"
+
+    id: int                         # PK, auto-increment
+    feed_name: str                  # NOT NULL — matches feed name in config
+    title: str                      # NOT NULL
+    url: str                        # NOT NULL, UNIQUE per feed — dedup key
+    published_at: datetime | None   # publication date from feed (nullable if absent)
+    full_content: str               # NOT NULL, full article text from feed
+    ingested_at: datetime           # auto-set on insert
+    is_read: bool                   # default False — used by unfiltered and filtered feeds
+    matched_filter_id: int | None   # FK → filters.id, nullable; set by Filter Processor for filtered feeds
+```
+
+**Indexes:**
+- `ix_news_items_url_feed` UNIQUE on `(url, feed_name)` — dedup key
+- `ix_news_items_feed_name` on `feed_name` — feed-scoped queries
+- `ix_news_items_is_read` on `is_read`
+- `ix_news_items_matched_filter_id` on `matched_filter_id`
+
+---
+
+### Filter
+
+```python
+class Filter(Base):
+    __tablename__ = "filters"
+
+    id: int          # PK, auto-increment
+    feed_name: str   # NOT NULL — matches feed name in config
+    name: str        # NOT NULL — human-readable label e.g. "vulnerabilities"
+    pattern: str     # NOT NULL — regex string e.g. "(CVE|vulnerability|exploit)"
+    created_at: datetime
+```
+
+**Indexes:**
+- `ix_filters_feed_name_name` UNIQUE on `(feed_name, name)` — sync upsert key
+
+Synced from config on each Filter Processor run. Rows not present in config are left (not deleted) to preserve FK references from `news_items`.
+
+---
+
+### Category
+
+```python
+class Category(Base):
+    __tablename__ = "categories"
+
+    id: int      # PK, auto-increment
+    name: str    # NOT NULL, UNIQUE — free-form label assigned by Claude e.g. "Security Vulnerability"
+```
+
+**Indexes:**
+- `ix_categories_name` UNIQUE on `name`
+
+Upserted by the Filter Processor when a new category string appears in Claude output. Never deleted.
+
+---
+
+### AIFilteredView
+
+```python
+class AIFilteredView(Base):
+    __tablename__ = "ai_filtered_views"
+
+    id: int                       # PK, auto-increment
+    news_item_id: int             # NOT NULL, FK → news_items.id
+    feed_name: str                # NOT NULL — denormalized for query convenience
+    category_id: int | None       # FK → categories.id, nullable
+    summary: str | None           # 1–2 sentence AI-generated summary, nullable
+    tags: str | None              # JSON array as text e.g. '["CVE","patch"]', nullable
+    is_read: bool                 # default False — user-controlled
+    keep_as_context: bool         # default False — user-controlled; if True, item is included as context in future Claude CLI calls
+    last_filtered_at: datetime    # when this row was last written by the Filter Processor
+```
+
+**Indexes:**
+- `ix_ai_filtered_views_news_item_id` UNIQUE on `news_item_id` — one row per news item
+- `ix_ai_filtered_views_feed_name` on `feed_name`
+- `ix_ai_filtered_views_is_read` on `is_read`
+- `ix_ai_filtered_views_keep_as_context` on `keep_as_context` — Filter Processor context query
 
 ## 3) Validation Rules
 
@@ -66,7 +173,7 @@ class FeedHealth(Base):
 - **V-001:** `title` MUST NOT be empty or whitespace-only
 - **V-002:** `year` MUST be a 4-digit integer between 1900 and current year + 1
 - **V-003:** `genres` MUST be a valid JSON array with at least one non-empty string
-- **V-004:** `torrent_url` MUST be a non-empty string (used as dedup key)
+- **V-004:** `torrent_url` MUST be a non-empty string
 - **V-005:** `qualities` MUST be a valid JSON array
 
 ### Movie (on enrichment)
@@ -74,22 +181,33 @@ class FeedHealth(Base):
 - **V-007:** `rt_expert_rating`, if present, MUST be between 0 and 100
 - **V-008:** `rt_audience_rating`, if present, MUST be between 0 and 100
 
-### Deduplication Logic
+### Movie deduplication
 - **V-009:** On insert, check for existing record with same `torrent_url`
 - **V-010:** If match found, merge `qualities` arrays (union of available qualities)
 - **V-011:** If no URL match but same `title` + `year`, treat as same movie — merge qualities
 
+### NewsItem (on ingestion)
+- **V-012:** `title` MUST NOT be empty
+- **V-013:** `url` MUST be a non-empty string
+- **V-014:** `feed_name` MUST match a configured feed name in config
+- **V-015:** Duplicate `(url, feed_name)` MUST be skipped (idempotent ingestion)
+
+### AIFilteredView (on Filter Processor upsert)
+- **V-016:** `id` in Claude output MUST match a `news_items.id` from the input batch; discard if not found
+- **V-017:** `category` string MUST be non-empty (1–50 chars); skip item if blank
+- **V-018:** `summary` MUST be a non-empty string if present
+- **V-019:** `tags` MUST be a valid JSON array of non-empty strings
+- **V-020:** On upsert, MUST NOT overwrite `is_read` or `keep_as_context` — these are user-controlled fields
+
 ## 4) Compatibility Rules
 
 - **Backward compatibility:** Not applicable (single-user, no API consumers)
-- **Schema evolution:** SQLAlchemy `create_all()` adds new columns; manual `ALTER TABLE` for column changes. No formal migration framework initially.
-- **Data format:** `genres` and `qualities` stored as JSON text for SQLite compatibility (both backends support JSON text parsing)
+- **Schema evolution:** SQLAlchemy `create_all()` adds new tables; manual `ALTER TABLE` for column additions. No formal migration framework.
+- **Data formats:** `genres`, `qualities`, `tags` stored as JSON text for SQLite compatibility
 
 ## 5) Configuration Schema (YAML)
 
 ```yaml
-# config.yaml
-
 database:
   url: "mysql+pymysql://user:pass@localhost/pelis_feed"
   # Alternative: "sqlite:///./pelis_feed.db"
@@ -106,8 +224,8 @@ alerting:
   downtime_threshold_hours: 24
 
 enrichment:
-  source: "omdb"  # or "tmdb", "imdbapi"
-  api_key: ""     # if required by source (free tier)
+  source: "omdb"    # or "tmdb", "imdbapi"
+  api_key: ""
   timeout_seconds: 10
 
 filtering:
@@ -126,7 +244,7 @@ filtering:
   older_movies:
     min_imdb: 7.5
     min_rt_expert: 75
-    year_threshold: 6  # movies older than this many years from current
+    year_threshold: 6
 
 genre_priority:
   - action
@@ -138,35 +256,149 @@ genre_priority:
   - comedy
   - documentary
 
+news_feeds:
+  - name: "Tech News"
+    url: "https://example.com/tech/feed"
+    type: unfiltered
+
+  - name: "Security"
+    url: "https://example.com/security/feed"
+    type: filtered
+    filters:
+      - name: "vulnerabilities"
+        pattern: "(CVE|vulnerability|exploit|breach)"
+      - name: "tooling"
+        pattern: "(release|update|patch) v?[0-9]"
+
+  - name: "AI News"
+    url: "https://example.com/ai/feed"
+    type: ai_filtered
+    claude_prompt: |
+      You are filtering a news feed for relevance to AI research and engineering.
+      Return only items worth reading, with a category, one-sentence summary, and tags.
+      Respond as a JSON array matching the required schema.
+    claude_timeout_seconds: 60
+
 webapp:
   host: "127.0.0.1"
   port: 8080
 ```
 
-## 6) RSS Feed Contract (External — Not Controlled)
+## 6) Claude CLI JSON Contract (Q-005)
 
-**Source:** `https://yts.ag/rss`
-**Format:** RSS 2.0 XML
+### Invocation
 
-**Expected fields per `<item>`:**
-- `<title>` — Movie title (may include year and quality, e.g., "Movie Name (2024) [1080p]")
-- `<link>` — Torrent page URL
-- `<pubDate>` — Publication date
-- `<description>` — HTML blob with poster, genre, rating info (requires parsing)
-- `<enclosure>` — Torrent file URL (if present)
+```bash
+echo "$prompt" | claude --print
+```
 
-**Parsing strategy:**
-- Extract title, year, quality from `<title>` via regex
-- Extract genre, IMDb rating, poster URL from `<description>` HTML
-- Use `<link>` or `<enclosure>` URL as deduplication key
+The Filter Processor assembles `$prompt` as a single text string and pipes it to Claude CLI in non-interactive print mode. Claude's stdout is the JSON response.
 
-**Risk:** Feed format is uncontrolled and may change without notice. Parser must log warnings on unexpected format changes.
+### Prompt envelope (assembled by Filter Processor)
 
-## 7) API Response Contracts (JSON)
+```
+<claude_prompt from config.yaml — feed-specific instructions>
+
+Evaluate the news items below. Return ONLY a JSON array of items worth surfacing.
+Do not include context items in your output. Items you omit will not appear in the filtered view.
+Respond with valid JSON only — no markdown, no explanation.
+
+=== PENDING ITEMS (evaluate these) ===
+<JSON array — see input schema below>
+
+=== CONTEXT ITEMS (reference only — do not include in output) ===
+<JSON array of keep_as_context items, or [] if none>
+```
+
+### Input — pending items (sent to Claude)
+
+```json
+[
+  {
+    "id": 517,
+    "title": "Critical OpenSSL CVE patched in 3.4.1",
+    "url": "https://openssl.org/news/...",
+    "published_at": "2026-06-14T09:00:00Z",
+    "content": "Full article text — not truncated."
+  }
+]
+```
+
+### Input — context items (reference only, no output expected)
+
+Items from `ai_filtered_views` where `keep_as_context = true`. These are included so Claude has prior context, but the Filter Processor does not expect Claude to return them.
+
+```json
+[
+  {
+    "id": 412,
+    "title": "Log4Shell follow-up: affected projects list updated",
+    "category": "Security",
+    "summary": "The affected projects list for Log4Shell was updated with 12 new entries.",
+    "tags": ["Log4Shell", "CVE", "Java"]
+  }
+]
+```
+
+### Output — Claude's response
+
+A JSON array of items Claude chooses to surface. Items absent from the array are silently excluded from `ai_filtered_views` (or existing rows are left unchanged if previously surfaced).
+
+```json
+[
+  {
+    "id": 517,
+    "category": "Security Vulnerability",
+    "summary": "A critical OpenSSL CVE was patched in 3.4.1; all users should upgrade immediately.",
+    "tags": ["CVE", "OpenSSL", "patch"]
+  }
+]
+```
+
+**Output field contract:**
+
+| Field | Type | Rules |
+|---|---|---|
+| `id` | int | MUST match a pending item ID; discard row if not found (V-016) |
+| `category` | string | Free-form, 1–50 chars (V-017); upserted into `categories` table |
+| `summary` | string | 1–2 sentences (V-018) |
+| `tags` | string[] | 1–5 non-empty strings (V-019) |
+
+`keep_as_context` is NOT returned by Claude — it is set by the user via the web UI.
+
+### Filter Processor upsert flow
+
+```
+for each item in Claude output:
+  1. Validate id exists in input batch — discard if not (V-016)
+  2. Validate required fields — skip item and log warning on failure (V-017–V-019)
+  3. get-or-create Category(name=item["category"]) → category_id
+  4. upsert ai_filtered_views(news_item_id=id, category_id=..., summary=..., tags=..., last_filtered_at=now())
+     — do NOT overwrite is_read or keep_as_context on existing rows (V-020)
+
+log: "Feed <name>: sent N items, received M items" (NFR-006)
+```
+
+### Error handling
+
+| Failure | Behavior |
+|---|---|
+| Claude CLI not found / auth error | Log error, skip AI pass for this feed, continue |
+| Timeout (`claude_timeout_seconds` exceeded) | Log timeout, skip AI pass for this feed, continue |
+| stdout is not valid JSON | Log error with raw output excerpt, skip AI pass for this feed |
+| Individual item fails validation | Log warning, skip that item, continue processing remaining items |
+
+## 7) RSS Feed Contract (External — Not Controlled)
+
+**Movie feed:** `https://yts.ag/rss` — RSS 2.0 XML. Fields per `<item>`: `<title>`, `<link>`, `<pubDate>`, `<description>` (HTML blob with poster/genre/rating), `<enclosure>` (torrent URL). Parser extracts title/year/quality from `<title>` via regex; genre/IMDb/poster from `<description>` HTML.
+
+**News feeds:** RSS 2.0 or Atom 1.0 (parsed via feedparser). Fields used: title, link, published/updated, summary/content. Format varies by feed — feedparser normalises differences.
+
+**Risk:** Both feed formats are uncontrolled and may change without notice. Parser must log warnings on unexpected structure and skip unparseable items rather than crashing.
+
+## 8) API Response Contracts (JSON)
 
 ### GET `/api/movies`
-
-Returns filtered movies grouped by year sections.
 
 ```json
 {
@@ -180,7 +412,7 @@ Returns filtered movies grouped by year sections.
           "title": "Movie Name",
           "year": 2026,
           "genres": ["Action", "Thriller"],
-          "qualities": ["720p", "1080p", "2160p"],
+          "qualities": ["720p", "1080p"],
           "torrent_url": "https://...",
           "imdb_rating": 7.2,
           "rt_expert_rating": 85,
@@ -196,47 +428,20 @@ Returns filtered movies grouped by year sections.
     {
       "year": null,
       "label": "Older (pre-2021)",
-      "movies": [...]
+      "movies": []
     }
   ],
   "total_count": 150
 }
 ```
 
-**Notes:**
-- Movies are ordered within each section by genre priority (from config)
-- `is_read: true` movies are excluded from the response
-- Nullable fields (`imdb_rating`, `rt_expert_rating`, `rt_audience_rating`, `poster_url`, `enrichment_date`, `enrichment_error`) may be `null`
-
-### POST `/api/movies/{id}/read`
-
-Marks a movie as read. Returns the updated movie object.
+### POST `/api/movies/{id}/read` and `/api/movies/{id}/unread`
 
 ```json
-{
-  "id": 42,
-  "title": "Movie Name",
-  "is_read": true,
-  "updated_at": "2026-05-20T16:00:00Z"
-}
-```
-
-### POST `/api/movies/{id}/unread`
-
-Marks a movie as unread. Returns the updated movie object.
-
-```json
-{
-  "id": 42,
-  "title": "Movie Name",
-  "is_read": false,
-  "updated_at": "2026-05-20T16:05:00Z"
-}
+{ "id": 42, "title": "Movie Name", "is_read": true, "updated_at": "2026-05-20T16:00:00Z" }
 ```
 
 ### POST `/api/movies/{id}/enrich`
-
-Triggers on-demand enrichment. Returns the updated movie with ratings.
 
 ```json
 {
@@ -250,43 +455,125 @@ Triggers on-demand enrichment. Returns the updated movie with ratings.
 }
 ```
 
-On enrichment failure:
-
-```json
-{
-  "id": 42,
-  "title": "Movie Name",
-  "imdb_rating": null,
-  "rt_expert_rating": null,
-  "rt_audience_rating": null,
-  "enrichment_date": null,
-  "enrichment_error": "OMDb API timeout after 10s"
-}
-```
+On failure: same shape with all rating fields `null` and `enrichment_error` populated.
 
 ### GET `/api/health`
 
-Returns feed health status.
-
 ```json
 {
-  "last_success_at": "2026-05-20T14:00:00Z",
-  "last_attempt_at": "2026-05-20T16:00:00Z",
-  "last_error": null,
-  "consecutive_failures": 0,
-  "status": "healthy"
+  "feeds": [
+    {
+      "feed_name": "yts_movies",
+      "last_success_at": "2026-06-16T14:00:00Z",
+      "last_attempt_at": "2026-06-16T14:00:00Z",
+      "last_error": null,
+      "consecutive_failures": 0,
+      "status": "healthy"
+    },
+    {
+      "feed_name": "AI News",
+      "last_success_at": "2026-06-16T13:58:00Z",
+      "last_attempt_at": "2026-06-16T13:58:00Z",
+      "last_error": null,
+      "consecutive_failures": 0,
+      "status": "healthy"
+    }
+  ]
 }
 ```
 
-**`status` values:** `"healthy"` (last success < 24h ago), `"degraded"` (last success > 24h ago), `"unknown"` (never fetched)
+`status` values: `"healthy"` (last success < 24h ago), `"degraded"` (≥ 24h), `"unknown"` (never fetched).
+
+### GET `/api/news`
+
+```json
+{
+  "feeds": [
+    { "name": "Tech News", "type": "unfiltered", "unread_count": 12 },
+    { "name": "Security", "type": "filtered", "unread_count": 3 },
+    { "name": "AI News", "type": "ai_filtered", "unread_count": 7 }
+  ]
+}
+```
+
+### GET `/api/news/{feed_name}/items`
+
+Returns items appropriate to the feed type:
+- `unfiltered` → all `news_items` for the feed
+- `filtered` → only `news_items` where `matched_filter_id` is not null (includes filter name)
+- `ai_filtered` → rows from `ai_filtered_views` for the feed
+
+```json
+{
+  "feed_name": "AI News",
+  "type": "ai_filtered",
+  "items": [
+    {
+      "id": 88,
+      "news_item_id": 517,
+      "title": "Critical OpenSSL CVE patched in 3.4.1",
+      "url": "https://openssl.org/news/...",
+      "published_at": "2026-06-14T09:00:00Z",
+      "category": "Security Vulnerability",
+      "summary": "A critical OpenSSL CVE was patched in 3.4.1; upgrade immediately.",
+      "tags": ["CVE", "OpenSSL", "patch"],
+      "is_read": false,
+      "keep_as_context": false,
+      "last_filtered_at": "2026-06-16T12:00:00Z"
+    }
+  ]
+}
+```
+
+For `filtered` type, each item also includes `matched_filter_name: "vulnerabilities"`.
+
+### GET `/api/news/{feed_name}/raw`
+
+Only valid for `ai_filtered` feeds (FR-032). Returns the raw `news_items` rows so the user can browse unprocessed items.
+
+```json
+{
+  "feed_name": "AI News",
+  "items": [
+    {
+      "id": 517,
+      "title": "Critical OpenSSL CVE patched in 3.4.1",
+      "url": "https://openssl.org/news/...",
+      "published_at": "2026-06-14T09:00:00Z",
+      "full_content": "Full article text...",
+      "ingested_at": "2026-06-14T10:00:00Z",
+      "is_read": false,
+      "matched_filter_id": null,
+      "has_ai_view": true
+    }
+  ]
+}
+```
+
+`has_ai_view` indicates whether an `ai_filtered_views` row exists for this item (useful for UI to distinguish processed vs. pending items).
+
+### POST `/api/news/items/{id}/read` and `/api/news/items/{id}/unread`
+
+```json
+{ "id": 517, "is_read": true }
+```
+
+### POST `/api/news/views/{id}/read` and `/api/news/views/{id}/unread`
+
+```json
+{ "id": 88, "is_read": true }
+```
+
+### POST `/api/news/views/{id}/keep` and `/api/news/views/{id}/unkeep`
+
+```json
+{ "id": 88, "keep_as_context": true }
+```
 
 ### Error Responses (All Endpoints)
 
 ```json
-{
-  "detail": "Movie not found",
-  "status_code": 404
-}
+{ "detail": "Not found", "status_code": 404 }
 ```
 
 Standard HTTP status codes: `200` success, `404` not found, `500` internal error.
