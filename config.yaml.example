@@ -49,3 +49,29 @@ genre_priority:
 webapp:
   host: "127.0.0.1"
   port: 8080
+
+# News feeds — remove this section if you don't need news ingestion.
+# Each feed has a type: unfiltered | filtered | ai_filtered
+news_feeds:
+  - name: "Tech News"
+    url: "https://example.com/tech/feed"
+    type: unfiltered
+
+  - name: "Security"
+    url: "https://example.com/security/feed"
+    type: filtered
+    filters:
+      - name: "vulnerabilities"
+        pattern: "(CVE|vulnerability|exploit|breach)"
+      - name: "tooling"
+        pattern: "(release|update|patch) v?[0-9]"
+
+  - name: "AI News"
+    url: "https://example.com/ai/feed"
+    type: ai_filtered
+    claude_prompt: |
+      You are filtering a news feed for relevance to AI research and engineering.
+      Return only items worth reading, with a category, one-sentence summary, and tags.
+      Respond as a JSON array — each item must have: id (integer), category (string),
+      summary (string), tags (array of strings).
+    claude_timeout_seconds: 60

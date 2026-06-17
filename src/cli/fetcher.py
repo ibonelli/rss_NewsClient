@@ -153,15 +153,7 @@ def _parse_entry(entry: dict) -> dict | None:
 
 
 def fetch_feed(feed_url: str) -> list[dict]:
-    """Fetch and parse the RSS feed, returning a list of movie dicts.
-
-    Args:
-        feed_url: URL of the RSS feed to fetch.
-
-    Returns:
-        List of parsed movie dictionaries. Entries that cannot be parsed
-        are logged and skipped.
-    """
+    """Fetch and parse the YTS RSS feed, returning a list of movie dicts."""
     logger.info("Fetching RSS feed from: %s", feed_url)
 
     feed = feedparser.parse(feed_url)
@@ -186,3 +178,87 @@ def fetch_feed(feed_url: str) -> list[dict]:
 
     logger.info("Successfully parsed %d movies from feed", len(movies))
     return movies
+
+
+def fetch_news_feed(feed_name: str, feed_url: str) -> list[dict]:
+    """Fetch and parse a news RSS/Atom feed, returning a list of news item dicts.
+
+    Args:
+        feed_name: Logical name of the feed (from config).
+        feed_url: URL of the RSS/Atom feed.
+
+    Returns:
+        List of news item dicts with keys: feed_name, title, url, published_at,
+        full_content. Unparseable entries are logged and skipped.
+
+    Raises:
+        Exception: On network failure (caller should catch and record in feed_health).
+    """
+    logger.info("Fetching news feed '%s' from: %s", feed_name, feed_url)
+
+    feed = feedparser.parse(feed_url)
+
+    if feed.bozo:
+        logger.warning("News feed '%s' parsing had issues: %s", feed_name, feed.bozo_exception)
+
+    if not feed.entries:
+        logger.info("No entries found in news feed '%s'", feed_name)
+        return []
+
+    logger.info("Found %d entries in news feed '%s'", len(feed.entries), feed_name)
+
+    items = []
+    for entry in feed.entries:
+        try:
+            parsed = _parse_news_entry(feed_name, entry)
+            if parsed:
+                items.append(parsed)
+        except Exception as e:
+            logger.warning(
+                "Failed to parse news entry in '%s': %s — %s",
+                feed_name, entry.get("title", "?"), e,
+            )
+
+    logger.info("Parsed %d news items from feed '%s'", len(items), feed_name)
+    return items
+
+
+def _parse_news_entry(feed_name: str, entry: dict) -> dict | None:
+    """Parse a single feedparser entry into a news item dict."""
+    title = (entry.get("title") or "").strip()
+    if not title:
+        logger.debug("Skipping news entry with empty title in feed '%s'", feed_name)
+        return None
+
+    url = entry.get("link", "").strip()
+    if not url:
+        logger.debug("Skipping news entry with no URL: %s", title)
+        return None
+
+    # feedparser normalises RSS pubDate and Atom updated/published into published_parsed
+    published_at = None
+    if entry.get("published_parsed"):
+        try:
+            published_at = datetime(*entry["published_parsed"][:6], tzinfo=timezone.utc)
+        except (TypeError, ValueError):
+            pass
+    elif entry.get("updated_parsed"):
+        try:
+            published_at = datetime(*entry["updated_parsed"][:6], tzinfo=timezone.utc)
+        except (TypeError, ValueError):
+            pass
+
+    # Prefer full content over summary; feedparser puts Atom <content> in entry.content list
+    full_content = ""
+    if entry.get("content"):
+        full_content = entry["content"][0].get("value", "")
+    if not full_content:
+        full_content = entry.get("summary", "") or ""
+
+    return {
+        "feed_name": feed_name,
+        "title": title,
+        "url": url,
+        "published_at": published_at,
+        "full_content": full_content,
+    }

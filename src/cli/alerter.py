@@ -1,7 +1,7 @@
 """Feed health tracking and email alerting for pelis-feed.
 
-Monitors RSS feed health and sends email alerts via local SMTP when the
-feed has been unreachable for longer than the configured threshold.
+Monitors all configured feeds and sends an email alert via local SMTP when
+any feed has been unreachable for longer than the configured threshold.
 """
 
 from __future__ import annotations
@@ -20,29 +20,28 @@ __all__ = ["update_feed_health", "check_and_alert"]
 logger = logging.getLogger(__name__)
 
 
-def _get_or_create_health(session: Session) -> FeedHealth:
-    """Get the single FeedHealth row, creating it if it doesn't exist."""
-    health = session.query(FeedHealth).first()
+def _get_or_create_health(session: Session, feed_name: str) -> FeedHealth:
+    """Get the FeedHealth row for a feed, creating it if it doesn't exist."""
+    health = session.query(FeedHealth).filter(FeedHealth.feed_name == feed_name).first()
     if health is None:
-        health = FeedHealth(
-            consecutive_failures=0,
-        )
+        health = FeedHealth(feed_name=feed_name, consecutive_failures=0)
         session.add(health)
         session.flush()
     return health
 
 
 def update_feed_health(
-    session: Session, success: bool, error: str | None = None
+    session: Session, feed_name: str, success: bool, error: str | None = None
 ) -> None:
-    """Update the feed health record after a fetch attempt.
+    """Update the feed health record for a feed after a fetch attempt.
 
     Args:
         session: SQLAlchemy session.
+        feed_name: Logical name of the feed.
         success: Whether the fetch was successful.
         error: Error message if the fetch failed.
     """
-    health = _get_or_create_health(session)
+    health = _get_or_create_health(session, feed_name)
     now = datetime.now(timezone.utc)
     health.last_attempt_at = now
 
@@ -51,88 +50,100 @@ def update_feed_health(
         health.last_error = None
         health.consecutive_failures = 0
         health.alert_sent_at = None  # Reset alert on recovery
-        logger.info("Feed health updated: success")
+        logger.info("Feed health updated: '%s' success", feed_name)
     else:
         health.last_error = error
         health.consecutive_failures += 1
         logger.warning(
-            "Feed health updated: failure #%d — %s",
-            health.consecutive_failures,
-            error,
+            "Feed health updated: '%s' failure #%d — %s",
+            feed_name, health.consecutive_failures, error,
         )
 
     session.commit()
 
 
-def check_and_alert(session: Session, config: dict) -> bool:
-    """Check if feed downtime exceeds threshold and send alert if needed.
+def check_and_alert(session: Session, config: dict) -> int:
+    """Check all feeds for downtime and send alert email if any exceed the threshold.
+
+    Sends one aggregated email listing all degraded feeds. Each feed tracks its
+    own alert_sent_at so alerts are not repeated until the feed recovers.
 
     Args:
         session: SQLAlchemy session.
         config: Application config dict (expects config["alerting"]).
 
     Returns:
-        True if an alert was sent, False otherwise.
+        Number of feeds for which an alert was (newly) sent.
     """
     alerting_config = config.get("alerting", {})
     threshold_hours = alerting_config.get("downtime_threshold_hours", 24)
-
-    health = _get_or_create_health(session)
+    threshold = timedelta(hours=threshold_hours)
     now = datetime.now(timezone.utc)
 
-    # If we've never had a successful fetch, can't determine downtime
-    if health.last_success_at is None:
-        logger.debug("No successful fetch recorded yet, skipping alert check")
-        return False
+    all_health = session.query(FeedHealth).all()
+    newly_degraded: list[tuple[FeedHealth, timedelta]] = []
 
-    downtime = now - health.last_success_at
-    threshold = timedelta(hours=threshold_hours)
+    for health in all_health:
+        if health.last_success_at is None:
+            continue
 
-    if downtime <= threshold:
-        logger.debug("Feed downtime (%s) within threshold (%s)", downtime, threshold)
-        return False
+        downtime = now - health.last_success_at
+        if downtime <= threshold:
+            continue
 
-    # Check if we already sent an alert for this downtime period
-    if health.alert_sent_at is not None and health.alert_sent_at > health.last_success_at:
-        logger.debug("Alert already sent for this downtime period")
-        return False
+        # Alert already sent for this downtime period
+        if health.alert_sent_at is not None and health.alert_sent_at > health.last_success_at:
+            continue
 
-    # Send alert
+        newly_degraded.append((health, downtime))
+
+    if not newly_degraded:
+        return 0
+
     try:
-        _send_alert_email(alerting_config, downtime)
-        health.alert_sent_at = now
+        _send_alert_email(alerting_config, newly_degraded)
+        for health, _ in newly_degraded:
+            health.alert_sent_at = now
         session.commit()
-        logger.info("Feed downtime alert sent (downtime: %s)", downtime)
-        return True
+        logger.info("Feed downtime alert sent for %d feed(s)", len(newly_degraded))
+        return len(newly_degraded)
     except Exception as e:
         logger.error("Failed to send alert email: %s", e)
-        return False
+        return 0
 
 
-def _send_alert_email(alerting_config: dict, downtime: timedelta) -> None:
-    """Send a feed downtime alert via SMTP.
-
-    Args:
-        alerting_config: Alerting section of the config.
-        downtime: How long the feed has been down.
-    """
+def _send_alert_email(
+    alerting_config: dict, degraded: list[tuple[FeedHealth, timedelta]]
+) -> None:
+    """Send a feed downtime alert listing all degraded feeds."""
     smtp_host = alerting_config.get("smtp_host", "localhost")
     smtp_port = alerting_config.get("smtp_port", 25)
     from_address = alerting_config.get("from_address", "pelis-feed@localhost")
     to_address = alerting_config.get("to_address", "user@localhost")
 
-    hours = int(downtime.total_seconds() // 3600)
+    feed_lines = []
+    for health, downtime in degraded:
+        hours = int(downtime.total_seconds() // 3600)
+        feed_lines.append(f"  - {health.feed_name}: down for ~{hours}h")
+
+    body = (
+        "The following pelis-feed sources have been unreachable:\n\n"
+        + "\n".join(feed_lines)
+        + "\n\nPlease check the feed URLs and network connectivity.\n\n"
+        "This is an automated alert from pelis-feed."
+    )
+
+    subject = (
+        "pelis-feed: 1 feed down"
+        if len(degraded) == 1
+        else f"pelis-feed: {len(degraded)} feeds down"
+    )
 
     msg = EmailMessage()
-    msg["Subject"] = "pelis-feed: RSS feed down for >24h"
+    msg["Subject"] = subject
     msg["From"] = from_address
     msg["To"] = to_address
-    msg.set_content(
-        f"The pelis-feed RSS source has been unreachable for approximately "
-        f"{hours} hours.\n\n"
-        f"Please check the feed URL and network connectivity.\n\n"
-        f"This is an automated alert from pelis-feed."
-    )
+    msg.set_content(body)
 
     with smtplib.SMTP(smtp_host, smtp_port) as smtp:
         smtp.send_message(msg)
