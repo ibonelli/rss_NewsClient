@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy.orm import Session
 
@@ -93,7 +93,7 @@ def deduplicate_and_store(session: Session, movies: list[dict]) -> dict:
                 existing.qualities = _merge_qualities(
                     existing.qualities, movie["qualities"]
                 )
-                existing.updated_at = datetime.now(timezone.utc)
+                existing.updated_at = datetime.utcnow()
                 stats["merged"] += 1
                 logger.debug("Merged qualities for existing URL: %s", movie["title"])
                 continue
@@ -108,7 +108,7 @@ def deduplicate_and_store(session: Session, movies: list[dict]) -> dict:
                 existing.qualities = _merge_qualities(
                     existing.qualities, movie["qualities"]
                 )
-                existing.updated_at = datetime.now(timezone.utc)
+                existing.updated_at = datetime.utcnow()
                 stats["merged"] += 1
                 logger.debug("Merged qualities for title+year match: %s (%d)", movie["title"], movie["year"])
                 continue
@@ -124,8 +124,8 @@ def deduplicate_and_store(session: Session, movies: list[dict]) -> dict:
                 poster_url=movie.get("poster_url"),
                 feed_entry_date=movie["feed_entry_date"],
                 is_read=False,
-                created_at=datetime.now(timezone.utc),
-                updated_at=datetime.now(timezone.utc),
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
             )
             session.add(new_movie)
             stats["inserted"] += 1

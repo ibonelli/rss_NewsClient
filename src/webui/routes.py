@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -95,7 +95,7 @@ async def mark_movie_read(movie_id: int, session: Session = Depends(_get_session
     if not movie:
         raise HTTPException(status_code=404, detail="Movie not found")
     movie.is_read = True
-    movie.updated_at = datetime.now(timezone.utc)
+    movie.updated_at = datetime.utcnow()
     session.commit()
     return {"id": movie.id, "title": movie.title, "is_read": True, "updated_at": movie.updated_at.isoformat()}
 
@@ -106,7 +106,7 @@ async def mark_movie_unread(movie_id: int, session: Session = Depends(_get_sessi
     if not movie:
         raise HTTPException(status_code=404, detail="Movie not found")
     movie.is_read = False
-    movie.updated_at = datetime.now(timezone.utc)
+    movie.updated_at = datetime.utcnow()
     session.commit()
     return {"id": movie.id, "title": movie.title, "is_read": False, "updated_at": movie.updated_at.isoformat()}
 
@@ -131,7 +131,7 @@ async def enrich(
         movie.rt_audience_rating = result["rt_audience_rating"]
     movie.enrichment_date = result["enrichment_date"]
     movie.enrichment_error = result["enrichment_error"]
-    movie.updated_at = datetime.now(timezone.utc)
+    movie.updated_at = datetime.utcnow()
     session.commit()
 
     return {
@@ -152,7 +152,7 @@ async def enrich(
 @router.get("/api/health")
 async def get_health(session: Session = Depends(_get_session)):
     all_health = session.query(FeedHealth).all()
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
 
     if not all_health:
         return {"feeds": []}

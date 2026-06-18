@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import smtplib
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from email.message import EmailMessage
 
 from sqlalchemy.orm import Session
@@ -42,7 +42,7 @@ def update_feed_health(
         error: Error message if the fetch failed.
     """
     health = _get_or_create_health(session, feed_name)
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
     health.last_attempt_at = now
 
     if success:
@@ -78,7 +78,7 @@ def check_and_alert(session: Session, config: dict) -> int:
     alerting_config = config.get("alerting", {})
     threshold_hours = alerting_config.get("downtime_threshold_hours", 24)
     threshold = timedelta(hours=threshold_hours)
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
 
     all_health = session.query(FeedHealth).all()
     newly_degraded: list[tuple[FeedHealth, timedelta]] = []

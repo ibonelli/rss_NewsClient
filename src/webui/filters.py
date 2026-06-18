@@ -7,7 +7,7 @@ and sorts by genre priority.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 
 __all__ = ["filter_movies", "group_by_year", "sort_by_genre_priority"]
 
@@ -32,7 +32,7 @@ def filter_movies(movies: list[dict], config: dict) -> list[dict]:
     older_config = filtering.get("older_movies", {})
     year_threshold = older_config.get("year_threshold", 6)
 
-    current_year = datetime.now(timezone.utc).year
+    current_year = datetime.utcnow().year
     older_cutoff = current_year - year_threshold
 
     result = []
@@ -118,7 +118,7 @@ def group_by_year(movies: list[dict], config: dict) -> list[dict]:
     Returns:
         List of section dicts: {"year": int|None, "label": str, "movies": [...]}
     """
-    current_year = datetime.now(timezone.utc).year
+    current_year = datetime.utcnow().year
     year_range = range(current_year, current_year - 6, -1)
 
     # Bucket movies by year

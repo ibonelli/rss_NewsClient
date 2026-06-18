@@ -17,7 +17,7 @@ import json
 import logging
 import re
 import subprocess
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy.orm import Session
 
@@ -232,7 +232,7 @@ def _run_ai_pass(
             existing_view.category_id = category_id
             existing_view.summary = summary
             existing_view.tags = json.dumps(tags)
-            existing_view.last_filtered_at = datetime.now(timezone.utc)
+            existing_view.last_filtered_at = datetime.utcnow()
         else:
             session.add(AIFilteredView(
                 news_item_id=item_id,
@@ -242,7 +242,7 @@ def _run_ai_pass(
                 tags=json.dumps(tags),
                 is_read=False,
                 keep_as_context=False,
-                last_filtered_at=datetime.now(timezone.utc),
+                last_filtered_at=datetime.utcnow(),
             ))
         upserted += 1
 

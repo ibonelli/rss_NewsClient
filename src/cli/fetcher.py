@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 from html.parser import HTMLParser
 
 import feedparser
@@ -106,7 +106,7 @@ def _parse_entry(entry: dict) -> dict | None:
             title = raw_title[: year_match.start()].strip()
         else:
             title = raw_title.strip()
-            year = datetime.now(timezone.utc).year
+            year = datetime.utcnow().year
             logger.warning("No year found in title: %s, defaulting to current year", raw_title)
 
     # Extract qualities like [720p], [1080p], [2160p]
@@ -132,11 +132,11 @@ def _parse_entry(entry: dict) -> dict | None:
     published = entry.get("published_parsed")
     if published:
         try:
-            feed_entry_date = datetime(*published[:6], tzinfo=timezone.utc)
+            feed_entry_date = datetime(*published[:6])
         except (TypeError, ValueError):
-            feed_entry_date = datetime.now(timezone.utc)
+            feed_entry_date = datetime.utcnow()
     else:
-        feed_entry_date = datetime.now(timezone.utc)
+        feed_entry_date = datetime.utcnow()
 
     genres = desc_data["genres"] if desc_data["genres"] else ["Unknown"]
 
@@ -239,12 +239,12 @@ def _parse_news_entry(feed_name: str, entry: dict) -> dict | None:
     published_at = None
     if entry.get("published_parsed"):
         try:
-            published_at = datetime(*entry["published_parsed"][:6], tzinfo=timezone.utc)
+            published_at = datetime(*entry["published_parsed"][:6])
         except (TypeError, ValueError):
             pass
     elif entry.get("updated_parsed"):
         try:
-            published_at = datetime(*entry["updated_parsed"][:6], tzinfo=timezone.utc)
+            published_at = datetime(*entry["updated_parsed"][:6])
         except (TypeError, ValueError):
             pass
 

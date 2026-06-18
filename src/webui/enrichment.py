@@ -6,7 +6,7 @@ Calls external free-tier APIs (OMDb) to fetch ratings for a specific movie.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 
 import httpx
 
@@ -105,7 +105,7 @@ async def _enrich_from_omdb(
         # OMDb doesn't typically provide RT audience score separately
         # but if available in Ratings, it would be "Rotten Tomatoes Audience"
 
-        result["enrichment_date"] = datetime.now(timezone.utc)
+        result["enrichment_date"] = datetime.utcnow()
         logger.info(
             "OMDb enrichment success for '%s' (%d): IMDb=%s, RT=%s",
             title,

@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -60,7 +60,7 @@ def _store_news_items(session: Session, items: list[dict]) -> dict:
             url=url,
             published_at=item.get("published_at"),
             full_content=item.get("full_content") or "",
-            ingested_at=datetime.now(timezone.utc),
+            ingested_at=datetime.utcnow(),
             is_read=False,
         )
         session.add(news_item)
@@ -79,7 +79,7 @@ def _store_news_items(session: Session, items: list[dict]) -> dict:
                     url=(item.get("url") or "").strip(),
                     published_at=item.get("published_at"),
                     full_content=item.get("full_content") or "",
-                    ingested_at=datetime.now(timezone.utc),
+                    ingested_at=datetime.utcnow(),
                     is_read=False,
                 ))
                 session.commit()
