@@ -1,5 +1,7 @@
 # rss_NewsClient
 
+The fetch CLI is designed to work with cron. For example running it every 15 min via cron means that it fetches feeds every 15 min. Deduplicating in the DB (already-seen items are skipped by url+feed_name uniqueness check).
+
 ## First install & setup (using MySQL)
 
 ```bash
@@ -37,8 +39,16 @@ python3 src/cli/filter.py
 
 ## Cron setup
 
+There is a script that runs both (fetch and filter):
+
 ```bash
 run_pipeline.sh
+```
+
+To run it every 15 mins you use:
+
+```
+*/15 * * * * cd /home/ignacio/bin/rss_NewsClient && run_pipeline.sh
 ```
 
 ## Running the UI
