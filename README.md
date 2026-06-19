@@ -16,7 +16,7 @@ Run `mariadb` as root:
 
 ```sql
 CREATE DATABASE pelis_feed CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-GRANT ALL PRIVILEGES ON pelis_feed.* TO 'pelis_feed_user'@'localhost' IDENTIFIED BY 'MeHeit4uaH6I!yai';
+GRANT ALL PRIVILEGES ON pelis_feed.* TO 'pelis_feed_user'@'localhost' IDENTIFIED BY '<password>';
 FLUSH PRIVILEGES;
 EXIT;
 ```
