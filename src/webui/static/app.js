@@ -97,7 +97,11 @@ function MovieCard({ movie, onMarkRead, onEnrich }) {
                     ${movie.genres.map((g, i) => html`<${Badge} key=${i} className="genre-badge">${g}</${Badge}>`)}
                 </div>
                 <div className="movie-qualities">
-                    ${movie.qualities.map((q, i) => html`<${Badge} key=${i} className="quality-badge">${q}</${Badge}>`)}
+                    ${movie.qualities.map((q, i) => html`
+                        <a key=${i} href=${movie.torrent_url} target="_blank" rel="noreferrer" className="quality-link">
+                            <${Badge} className="quality-badge">${q}</${Badge}>
+                        </a>
+                    `)}
                 </div>
                 <div className="movie-ratings">
                     <${RatingBadge} label="IMDb" value=${movie.imdb_rating} max=${10} />
