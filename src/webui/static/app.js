@@ -1,11 +1,12 @@
 const { useState, useEffect } = React;
+const html = htm.bind(React.createElement);
 
 // ---------------------------------------------------------------------------
 // Shared utilities
 // ---------------------------------------------------------------------------
 
 function RatingBadge({ label, value, max }) {
-    if (value === null || value === undefined) return <span className="rating na">{label}: N/A</span>;
+    if (value === null || value === undefined) return html`<span className="rating na">${label}: N/A</span>`;
     let color = "rating-red";
     if (max === 10) {
         if (value >= 7) color = "rating-green";
@@ -14,11 +15,11 @@ function RatingBadge({ label, value, max }) {
         if (value >= 70) color = "rating-green";
         else if (value >= 50) color = "rating-yellow";
     }
-    return <span className={`rating ${color}`}>{label}: {value}{max === 100 ? "%" : ""}</span>;
+    return html`<span className=${`rating ${color}`}>${label}: ${value}${max === 100 ? "%" : ""}</span>`;
 }
 
 function Badge({ children, className = "" }) {
-    return <span className={`badge ${className}`}>{children}</span>;
+    return html`<span className=${`badge ${className}`}>${children}</span>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -44,14 +45,12 @@ function HealthBanner() {
     const colors = { healthy: "#2ecc71", degraded: "#f39c12", unknown: "#95a5a6" };
     const labels = { healthy: "All Feeds Healthy", degraded: `${degraded.length} Feed(s) Degraded`, unknown: "Feed Status Unknown" };
 
-    return (
-        <div className="health-banner" style={{ backgroundColor: colors[overallStatus] }}>
-            <span>{labels[overallStatus]}</span>
-            {degraded.map(f => (
-                <span key={f.feed_name} className="health-detail">{f.feed_name}: down &gt;24h</span>
-            ))}
+    return html`
+        <div className="health-banner" style=${{ backgroundColor: colors[overallStatus] }}>
+            <span>${labels[overallStatus]}</span>
+            ${degraded.map(f => html`<span key=${f.feed_name} className="health-detail">${f.feed_name}: down >24h</span>`)}
         </div>
-    );
+    `;
 }
 
 // ---------------------------------------------------------------------------
@@ -85,38 +84,38 @@ function MovieCard({ movie, onMarkRead, onEnrich }) {
         setEnriching(false);
     };
 
-    return (
+    return html`
         <div className="movie-card">
-            {movie.poster_url && (
+            ${movie.poster_url && html`
                 <div className="movie-poster">
-                    <img src={movie.poster_url} alt={movie.title} />
+                    <img src=${movie.poster_url} alt=${movie.title} />
                 </div>
-            )}
+            `}
             <div className="movie-info">
-                <h3 className="movie-title">{movie.title} <span className="movie-year">({movie.year})</span></h3>
+                <h3 className="movie-title">${movie.title} <span className="movie-year">(${movie.year})</span></h3>
                 <div className="movie-genres">
-                    {movie.genres.map((g, i) => <Badge key={i} className="genre-badge">{g}</Badge>)}
+                    ${movie.genres.map((g, i) => html`<${Badge} key=${i} className="genre-badge">${g}</${Badge}>`)}
                 </div>
                 <div className="movie-qualities">
-                    {movie.qualities.map((q, i) => <Badge key={i} className="quality-badge">{q}</Badge>)}
+                    ${movie.qualities.map((q, i) => html`<${Badge} key=${i} className="quality-badge">${q}</${Badge}>`)}
                 </div>
                 <div className="movie-ratings">
-                    <RatingBadge label="IMDb" value={movie.imdb_rating} max={10} />
-                    <RatingBadge label="RT" value={movie.rt_expert_rating} max={100} />
-                    <RatingBadge label="Audience" value={movie.rt_audience_rating} max={100} />
+                    <${RatingBadge} label="IMDb" value=${movie.imdb_rating} max=${10} />
+                    <${RatingBadge} label="RT" value=${movie.rt_expert_rating} max=${100} />
+                    <${RatingBadge} label="Audience" value=${movie.rt_audience_rating} max=${100} />
                 </div>
-                {movie.enrichment_error && <p className="enrichment-error">{movie.enrichment_error}</p>}
+                ${movie.enrichment_error && html`<p className="enrichment-error">${movie.enrichment_error}</p>`}
                 <div className="movie-actions">
-                    <button className="btn btn-read" onClick={handleMarkRead} disabled={loading}>
-                        {loading ? "..." : "Mark as Read"}
+                    <button className="btn btn-read" onClick=${handleMarkRead} disabled=${loading}>
+                        ${loading ? "..." : "Mark as Read"}
                     </button>
-                    <button className="btn btn-enrich" onClick={handleEnrich} disabled={enriching}>
-                        {enriching ? "Loading..." : "Refresh Ratings"}
+                    <button className="btn btn-enrich" onClick=${handleEnrich} disabled=${enriching}>
+                        ${enriching ? "Loading..." : "Refresh Ratings"}
                     </button>
                 </div>
             </div>
         </div>
-    );
+    `;
 }
 
 function MoviesTab() {
@@ -149,31 +148,30 @@ function MoviesTab() {
         );
     };
 
-    if (loading) return <div className="loading">Loading movies...</div>;
-    if (error) return <div className="error">{error}</div>;
+    if (loading) return html`<div className="loading">Loading movies...</div>`;
+    if (error) return html`<div className="error">${error}</div>`;
 
-    return (
+    return html`
         <div>
-            <div className="tab-count">{totalCount} movies</div>
-            {sections.length === 0 ? (
-                <div className="empty-state">
+            <div className="tab-count">${totalCount} movies</div>
+            ${sections.length === 0
+                ? html`<div className="empty-state">
                     <p>No movies to display. Run the ingester first:</p>
                     <code>python src/cli/main.py</code>
-                </div>
-            ) : (
-                sections.map((section, i) => (
-                    <section key={i} className="year-section">
-                        <h2 className="year-header">{section.label}</h2>
+                </div>`
+                : sections.map((section, i) => html`
+                    <section key=${i} className="year-section">
+                        <h2 className="year-header">${section.label}</h2>
                         <div className="movie-grid">
-                            {section.movies.map(movie => (
-                                <MovieCard key={movie.id} movie={movie} onMarkRead={handleMarkRead} onEnrich={handleEnrich} />
-                            ))}
+                            ${section.movies.map(movie => html`
+                                <${MovieCard} key=${movie.id} movie=${movie} onMarkRead=${handleMarkRead} onEnrich=${handleEnrich} />
+                            `)}
                         </div>
                     </section>
-                ))
-            )}
+                `)
+            }
         </div>
-    );
+    `;
 }
 
 // ---------------------------------------------------------------------------
@@ -195,22 +193,18 @@ function NewsItemRow({ item, onToggleRead }) {
         setLoading(false);
     };
 
-    return (
-        <div className={`news-item ${item.is_read ? "news-item-read" : ""}`}>
+    return html`
+        <div className=${`news-item ${item.is_read ? "news-item-read" : ""}`}>
             <div className="news-item-header">
-                <a className="news-item-title" href={item.url} target="_blank" rel="noreferrer">{item.title}</a>
-                {item.matched_filter_name && (
-                    <Badge className="filter-badge">{item.matched_filter_name}</Badge>
-                )}
+                <a className="news-item-title" href=${item.url} target="_blank" rel="noreferrer">${item.title}</a>
+                ${item.matched_filter_name && html`<${Badge} className="filter-badge">${item.matched_filter_name}</${Badge}>`}
             </div>
-            {item.published_at && (
-                <div className="news-item-date">{new Date(item.published_at).toLocaleString()}</div>
-            )}
-            <button className="btn btn-read btn-sm" onClick={handleToggle} disabled={loading}>
-                {loading ? "..." : item.is_read ? "Mark Unread" : "Mark Read"}
+            ${item.published_at && html`<div className="news-item-date">${new Date(item.published_at).toLocaleString()}</div>`}
+            <button className="btn btn-read btn-sm" onClick=${handleToggle} disabled=${loading}>
+                ${loading ? "..." : item.is_read ? "Mark Unread" : "Mark Read"}
             </button>
         </div>
-    );
+    `;
 }
 
 function AIViewRow({ item, onToggleRead, onToggleKeep }) {
@@ -241,37 +235,35 @@ function AIViewRow({ item, onToggleRead, onToggleKeep }) {
         setKeepLoading(false);
     };
 
-    return (
-        <div className={`news-item ai-view-item ${item.is_read ? "news-item-read" : ""}`}>
+    return html`
+        <div className=${`news-item ai-view-item ${item.is_read ? "news-item-read" : ""}`}>
             <div className="news-item-header">
-                <a className="news-item-title" href={item.url} target="_blank" rel="noreferrer">{item.title}</a>
-                {item.category && <Badge className="category-badge">{item.category}</Badge>}
-                {item.keep_as_context && <Badge className="context-badge">Context</Badge>}
+                <a className="news-item-title" href=${item.url} target="_blank" rel="noreferrer">${item.title}</a>
+                ${item.category && html`<${Badge} className="category-badge">${item.category}</${Badge}>`}
+                ${item.keep_as_context && html`<${Badge} className="context-badge">Context</${Badge}>`}
             </div>
-            {item.published_at && (
-                <div className="news-item-date">{new Date(item.published_at).toLocaleString()}</div>
-            )}
-            {item.summary && <p className="ai-summary">{item.summary}</p>}
-            {item.tags && item.tags.length > 0 && (
+            ${item.published_at && html`<div className="news-item-date">${new Date(item.published_at).toLocaleString()}</div>`}
+            ${item.summary && html`<p className="ai-summary">${item.summary}</p>`}
+            ${item.tags && item.tags.length > 0 && html`
                 <div className="ai-tags">
-                    {item.tags.map((t, i) => <Badge key={i} className="tag-badge">#{t}</Badge>)}
+                    ${item.tags.map((t, i) => html`<${Badge} key=${i} className="tag-badge">#${t}</${Badge}>`)}
                 </div>
-            )}
+            `}
             <div className="news-item-actions">
-                <button className="btn btn-read btn-sm" onClick={handleToggleRead} disabled={readLoading}>
-                    {readLoading ? "..." : item.is_read ? "Mark Unread" : "Mark Read"}
+                <button className="btn btn-read btn-sm" onClick=${handleToggleRead} disabled=${readLoading}>
+                    ${readLoading ? "..." : item.is_read ? "Mark Unread" : "Mark Read"}
                 </button>
                 <button
-                    className={`btn btn-sm ${item.keep_as_context ? "btn-keep-active" : "btn-keep"}`}
-                    onClick={handleToggleKeep}
-                    disabled={keepLoading}
+                    className=${`btn btn-sm ${item.keep_as_context ? "btn-keep-active" : "btn-keep"}`}
+                    onClick=${handleToggleKeep}
+                    disabled=${keepLoading}
                     title="Keep as context for future AI filtering runs"
                 >
-                    {keepLoading ? "..." : item.keep_as_context ? "Unkeep" : "Keep as Context"}
+                    ${keepLoading ? "..." : item.keep_as_context ? "Unkeep" : "Keep as Context"}
                 </button>
             </div>
         </div>
-    );
+    `;
 }
 
 // ---------------------------------------------------------------------------
@@ -293,16 +285,14 @@ function UnfilteredFeedView({ feedName }) {
         setItems(prev => prev.map(item => item.id === id ? { ...item, is_read: isRead } : item));
     };
 
-    if (loading) return <div className="loading">Loading...</div>;
-    if (items.length === 0) return <div className="empty-state">No items yet.</div>;
+    if (loading) return html`<div className="loading">Loading...</div>`;
+    if (items.length === 0) return html`<div className="empty-state">No items yet.</div>`;
 
-    return (
+    return html`
         <div className="news-list">
-            {items.map(item => (
-                <NewsItemRow key={item.id} item={item} onToggleRead={handleToggleRead} />
-            ))}
+            ${items.map(item => html`<${NewsItemRow} key=${item.id} item=${item} onToggleRead=${handleToggleRead} />`)}
         </div>
-    );
+    `;
 }
 
 function FilteredFeedView({ feedName }) {
@@ -320,16 +310,14 @@ function FilteredFeedView({ feedName }) {
         setItems(prev => prev.map(item => item.id === id ? { ...item, is_read: isRead } : item));
     };
 
-    if (loading) return <div className="loading">Loading...</div>;
-    if (items.length === 0) return <div className="empty-state">No matched items yet.</div>;
+    if (loading) return html`<div className="loading">Loading...</div>`;
+    if (items.length === 0) return html`<div className="empty-state">No matched items yet.</div>`;
 
-    return (
+    return html`
         <div className="news-list">
-            {items.map(item => (
-                <NewsItemRow key={item.id} item={item} onToggleRead={handleToggleRead} />
-            ))}
+            ${items.map(item => html`<${NewsItemRow} key=${item.id} item=${item} onToggleRead=${handleToggleRead} />`)}
         </div>
-    );
+    `;
 }
 
 function AIFilteredFeedView({ feedName }) {
@@ -365,47 +353,40 @@ function AIFilteredFeedView({ feedName }) {
         setItems(prev => prev.map(item => item.id === id ? { ...item, keep_as_context: keepAsContext } : item));
     };
 
-    if (loading) return <div className="loading">Loading...</div>;
+    if (loading) return html`<div className="loading">Loading...</div>`;
 
-    return (
+    const rawView = showRaw
+        ? (rawLoading
+            ? html`<div className="loading">Loading raw items...</div>`
+            : rawItems.length === 0
+                ? html`<div className="empty-state">No raw items.</div>`
+                : html`<div className="news-list">
+                    ${rawItems.map(item => html`
+                        <div key=${item.id} className=${`news-item ${item.is_read ? "news-item-read" : ""}`}>
+                            <div className="news-item-header">
+                                <a className="news-item-title" href=${item.url} target="_blank" rel="noreferrer">${item.title}</a>
+                                ${item.has_ai_view && html`<${Badge} className="processed-badge">Processed</${Badge}>`}
+                            </div>
+                            ${item.published_at && html`<div className="news-item-date">${new Date(item.published_at).toLocaleString()}</div>`}
+                        </div>
+                    `)}
+                </div>`)
+        : (items.length === 0
+            ? html`<div className="empty-state">No AI-filtered items yet. Run the filter processor first: <code>python src/cli/filter.py</code></div>`
+            : html`<div className="news-list">
+                ${items.map(item => html`<${AIViewRow} key=${item.id} item=${item} onToggleRead=${handleToggleRead} onToggleKeep=${handleToggleKeep} />`)}
+            </div>`);
+
+    return html`
         <div>
             <div className="ai-feed-toolbar">
-                <button className="btn btn-secondary btn-sm" onClick={handleShowRaw}>
-                    {showRaw ? "Hide Raw Items" : "Show Raw Items"}
+                <button className="btn btn-secondary btn-sm" onClick=${handleShowRaw}>
+                    ${showRaw ? "Hide Raw Items" : "Show Raw Items"}
                 </button>
             </div>
-
-            {showRaw ? (
-                rawLoading ? (
-                    <div className="loading">Loading raw items...</div>
-                ) : rawItems.length === 0 ? (
-                    <div className="empty-state">No raw items.</div>
-                ) : (
-                    <div className="news-list">
-                        {rawItems.map(item => (
-                            <div key={item.id} className={`news-item ${item.is_read ? "news-item-read" : ""}`}>
-                                <div className="news-item-header">
-                                    <a className="news-item-title" href={item.url} target="_blank" rel="noreferrer">{item.title}</a>
-                                    {item.has_ai_view && <Badge className="processed-badge">Processed</Badge>}
-                                </div>
-                                {item.published_at && (
-                                    <div className="news-item-date">{new Date(item.published_at).toLocaleString()}</div>
-                                )}
-                            </div>
-                        ))}
-                    </div>
-                )
-            ) : items.length === 0 ? (
-                <div className="empty-state">No AI-filtered items yet. Run the filter processor first:<br /><code>python src/cli/filter.py</code></div>
-            ) : (
-                <div className="news-list">
-                    {items.map(item => (
-                        <AIViewRow key={item.id} item={item} onToggleRead={handleToggleRead} onToggleKeep={handleToggleKeep} />
-                    ))}
-                </div>
-            )}
+            ${rawView}
         </div>
-    );
+    `;
 }
 
 // ---------------------------------------------------------------------------
@@ -429,42 +410,39 @@ function NewsTab() {
             .catch(() => setLoading(false));
     }, []);
 
-    if (loading) return <div className="loading">Loading news feeds...</div>;
-    if (feeds.length === 0) return (
+    if (loading) return html`<div className="loading">Loading news feeds...</div>`;
+    if (feeds.length === 0) return html`
         <div className="empty-state">
             <p>No news feeds configured. Add <code>news_feeds</code> to your config.yaml.</p>
         </div>
-    );
+    `;
 
     const currentFeed = feeds.find(f => f.name === activeFeed);
 
-    return (
+    return html`
         <div className="news-tab">
             <div className="news-feed-nav">
-                {feeds.map(feed => (
+                ${feeds.map(feed => html`
                     <button
-                        key={feed.name}
-                        className={`feed-nav-btn ${activeFeed === feed.name ? "active" : ""}`}
-                        onClick={() => setActiveFeed(feed.name)}
+                        key=${feed.name}
+                        className=${`feed-nav-btn ${activeFeed === feed.name ? "active" : ""}`}
+                        onClick=${() => setActiveFeed(feed.name)}
                     >
-                        {feed.name}
-                        {feed.unread_count > 0 && (
-                            <span className="unread-badge">{feed.unread_count}</span>
-                        )}
+                        ${feed.name}
+                        ${feed.unread_count > 0 && html`<span className="unread-badge">${feed.unread_count}</span>`}
                     </button>
-                ))}
+                `)}
             </div>
-
-            {currentFeed && (
+            ${currentFeed && html`
                 <div className="news-feed-content">
-                    <div className="feed-type-label">{currentFeed.type}</div>
-                    {currentFeed.type === "unfiltered" && <UnfilteredFeedView feedName={currentFeed.name} />}
-                    {currentFeed.type === "filtered" && <FilteredFeedView feedName={currentFeed.name} />}
-                    {currentFeed.type === "ai_filtered" && <AIFilteredFeedView feedName={currentFeed.name} />}
+                    <div className="feed-type-label">${currentFeed.type}</div>
+                    ${currentFeed.type === "unfiltered" && html`<${UnfilteredFeedView} feedName=${currentFeed.name} />`}
+                    ${currentFeed.type === "filtered" && html`<${FilteredFeedView} feedName=${currentFeed.name} />`}
+                    ${currentFeed.type === "ai_filtered" && html`<${AIFilteredFeedView} feedName=${currentFeed.name} />`}
                 </div>
-            )}
+            `}
         </div>
-    );
+    `;
 }
 
 // ---------------------------------------------------------------------------
@@ -474,35 +452,33 @@ function NewsTab() {
 function App() {
     const [activeTab, setActiveTab] = useState("movies");
 
-    return (
+    return html`
         <div className="app">
             <header className="app-header">
                 <h1>pelis-feed</h1>
                 <nav className="tab-nav">
                     <button
-                        className={`tab-btn ${activeTab === "movies" ? "active" : ""}`}
-                        onClick={() => setActiveTab("movies")}
+                        className=${`tab-btn ${activeTab === "movies" ? "active" : ""}`}
+                        onClick=${() => setActiveTab("movies")}
                     >
                         Movies
                     </button>
                     <button
-                        className={`tab-btn ${activeTab === "news" ? "active" : ""}`}
-                        onClick={() => setActiveTab("news")}
+                        className=${`tab-btn ${activeTab === "news" ? "active" : ""}`}
+                        onClick=${() => setActiveTab("news")}
                     >
                         News
                     </button>
                 </nav>
             </header>
-
-            <HealthBanner />
-
+            <${HealthBanner} />
             <main className="tab-content">
-                {activeTab === "movies" && <MoviesTab />}
-                {activeTab === "news" && <NewsTab />}
+                ${activeTab === "movies" && html`<${MoviesTab} />`}
+                ${activeTab === "news" && html`<${NewsTab} />`}
             </main>
         </div>
-    );
+    `;
 }
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(<App />);
+root.render(html`<${App} />`);
