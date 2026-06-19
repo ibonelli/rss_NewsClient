@@ -4,7 +4,6 @@ database:
 
 feed:
   url: "https://yts.mx/rss"
-  poll_interval_hours: 2
 
 alerting:
   smtp_host: "localhost"
