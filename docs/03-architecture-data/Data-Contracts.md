@@ -31,6 +31,7 @@ class Movie(Base):
     __tablename__ = "movies"
 
     id: int                           # PK, auto-increment
+    imdb_id: str | None               # nullable — OMDb imdbID e.g. "tt1234567"; populated on enrichment
     title: str                        # NOT NULL, max 500 chars
     year: int                         # NOT NULL, 4-digit year
     genres: str                       # NOT NULL, JSON array as text e.g. '["Action","Thriller"]'
@@ -369,6 +370,9 @@ log: "Feed <name> import: received N rows, persisted P, discarded D" (NFR-006)
 
 ### GET `/api/movies`
 
+Query params:
+- `filtered` (bool, default `true`) — when `false`, rating/genre filters are skipped and all unread movies are returned
+
 ```json
 {
   "sections": [
@@ -383,6 +387,7 @@ log: "Feed <name> import: received N rows, persisted P, discarded D" (NFR-006)
           "genres": ["Action", "Thriller"],
           "qualities": ["720p", "1080p"],
           "torrent_url": "https://...",
+          "imdb_id": "tt1234567",
           "imdb_rating": 7.2,
           "rt_expert_rating": 85,
           "rt_audience_rating": 78,
@@ -416,6 +421,7 @@ log: "Feed <name> import: received N rows, persisted P, discarded D" (NFR-006)
 {
   "id": 42,
   "title": "Movie Name",
+  "imdb_id": "tt1234567",
   "imdb_rating": 7.2,
   "rt_expert_rating": 85,
   "rt_audience_rating": 78,
@@ -424,7 +430,7 @@ log: "Feed <name> import: received N rows, persisted P, discarded D" (NFR-006)
 }
 ```
 
-On failure: same shape with all rating fields `null` and `enrichment_error` populated.
+On failure: same shape with all rating fields `null`, `imdb_id` `null`, and `enrichment_error` populated.
 
 ### GET `/api/health`
 

@@ -55,6 +55,10 @@
 - **FR-035:** The News tab MUST provide a UI button on `ai_filtered` feed views that triggers `FR-033` and downloads the resulting JSON file to the user's browser.
 - **FR-036:** The News tab MUST provide a UI file-upload control on `ai_filtered` feed views that submits a local JSON file to `FR-034` and refreshes the view on success.
 
+### Web Application — Movie View Controls
+- **FR-037:** The movie view MUST provide a Filtered / All toggle that switches between the rating-filtered view and the complete unread-movie list without a page reload.
+- **FR-038:** IMDb and RT rating badges MUST be clickable links. For enriched movies (where `imdb_id` is known), the IMDb badge MUST link directly to `https://www.imdb.com/title/{imdb_id}/`. When `imdb_id` is not yet known, the badge MUST fall back to an IMDb title-search URL. RT badges MUST link to a Rotten Tomatoes search for the movie title. Badges with no rating (N/A) MUST NOT be links.
+
 ### Read Tracking
 - **FR-017:** The web application MUST provide a UI mechanism (button/toggle) to mark movies as "already read/seen" so they are excluded from the view.
 - **FR-018:** Read-tracking status MUST be persisted in the database and survive application restarts.
@@ -71,7 +75,7 @@
 - **NFR-006 (Export/Import Observability):** The application SHOULD log the number of items included in each export request and the number of `ai_filtered_views` rows persisted on each import.
 
 ## 5) Data Requirements
-- **Movies:** title, year, genre(s), torrent URL, quality/resolution, IMDb rating, RT expert rating, RT audience rating, poster URL, feed entry date, enrichment date, read status
+- **Movies:** title, year, genre(s), torrent URL, quality/resolution, IMDb ID (from enrichment), IMDb rating, RT expert rating, RT audience rating, poster URL, feed entry date, enrichment date, read status
 - **News — `news_items` (all feed types):** title, URL, publication date, source feed name, full content, ingestion timestamp, read status, matched_filter (nullable)
 - **News — `ai_filtered_views` (AI-filtered feeds only):** source feed name, title, URL, publication date, category, summary, tags (list), read status, keep-as-context flag, ingestion timestamp, source_item_id (FK → news_items)
 - Retention: indefinite (database on disk)
