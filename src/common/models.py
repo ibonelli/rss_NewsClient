@@ -30,6 +30,7 @@ class Movie(Base):
     genres: Mapped[str] = mapped_column(Text, nullable=False)  # JSON array as text
     torrent_url: Mapped[str] = mapped_column(String(1000), nullable=False, unique=True)
     qualities: Mapped[str] = mapped_column(Text, nullable=False, default="[]")  # JSON array
+    imdb_id: Mapped[str | None] = mapped_column(String(20), nullable=True)
     imdb_rating: Mapped[float | None] = mapped_column(Float, nullable=True)
     rt_expert_rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
     rt_audience_rating: Mapped[int | None] = mapped_column(Integer, nullable=True)

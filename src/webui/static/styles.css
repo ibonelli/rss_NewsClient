@@ -210,6 +210,14 @@ body {
     background-color: rgba(46, 204, 113, 0.4);
 }
 
+.rating-link {
+    text-decoration: none;
+}
+
+.rating-link:hover .rating {
+    filter: brightness(1.25);
+}
+
 /* Ratings */
 .movie-ratings {
     display: flex;

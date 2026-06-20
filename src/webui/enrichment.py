@@ -33,6 +33,7 @@ async def enrich_movie(movie_title: str, movie_year: int, config: dict) -> dict:
     timeout = enrichment_config.get("timeout_seconds", 10)
 
     result = {
+        "imdb_id": None,
         "imdb_rating": None,
         "rt_expert_rating": None,
         "rt_audience_rating": None,
@@ -78,7 +79,11 @@ async def _enrich_from_omdb(
             logger.info("OMDb: movie not found — %s (%d)", title, year)
             return result
 
-        # Extract IMDb rating
+        # Extract IMDb ID and rating
+        imdb_id = data.get("imdbID", "")
+        if imdb_id and imdb_id.startswith("tt"):
+            result["imdb_id"] = imdb_id
+
         imdb_str = data.get("imdbRating", "N/A")
         if imdb_str != "N/A":
             try:

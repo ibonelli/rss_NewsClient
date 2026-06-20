@@ -45,6 +45,7 @@ def _movie_to_dict(movie: Movie) -> dict:
         "genres": json.loads(movie.genres) if movie.genres else [],
         "qualities": json.loads(movie.qualities) if movie.qualities else [],
         "torrent_url": movie.torrent_url,
+        "imdb_id": movie.imdb_id,
         "imdb_rating": movie.imdb_rating,
         "rt_expert_rating": movie.rt_expert_rating,
         "rt_audience_rating": movie.rt_audience_rating,
@@ -123,6 +124,8 @@ async def enrich(
 
     result = await enrich_movie(movie.title, movie.year, config)
 
+    if result["imdb_id"] is not None:
+        movie.imdb_id = result["imdb_id"]
     if result["imdb_rating"] is not None:
         movie.imdb_rating = result["imdb_rating"]
     if result["rt_expert_rating"] is not None:
@@ -137,6 +140,7 @@ async def enrich(
     return {
         "id": movie.id,
         "title": movie.title,
+        "imdb_id": movie.imdb_id,
         "imdb_rating": movie.imdb_rating,
         "rt_expert_rating": movie.rt_expert_rating,
         "rt_audience_rating": movie.rt_audience_rating,

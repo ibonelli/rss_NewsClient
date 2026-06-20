@@ -5,7 +5,7 @@ const html = htm.bind(React.createElement);
 // Shared utilities
 // ---------------------------------------------------------------------------
 
-function RatingBadge({ label, value, max }) {
+function RatingBadge({ label, value, max, href }) {
     if (value === null || value === undefined) return html`<span className="rating na">${label}: N/A</span>`;
     let color = "rating-red";
     if (max === 10) {
@@ -15,7 +15,9 @@ function RatingBadge({ label, value, max }) {
         if (value >= 70) color = "rating-green";
         else if (value >= 50) color = "rating-yellow";
     }
-    return html`<span className=${`rating ${color}`}>${label}: ${value}${max === 100 ? "%" : ""}</span>`;
+    const badge = html`<span className=${`rating ${color}`}>${label}: ${value}${max === 100 ? "%" : ""}</span>`;
+    if (!href) return badge;
+    return html`<a href=${href} target="_blank" rel="noreferrer" className="rating-link">${badge}</a>`;
 }
 
 function Badge({ children, className = "" }) {
@@ -104,9 +106,14 @@ function MovieCard({ movie, onMarkRead, onEnrich }) {
                     `)}
                 </div>
                 <div className="movie-ratings">
-                    <${RatingBadge} label="IMDb" value=${movie.imdb_rating} max=${10} />
-                    <${RatingBadge} label="RT" value=${movie.rt_expert_rating} max=${100} />
-                    <${RatingBadge} label="Audience" value=${movie.rt_audience_rating} max=${100} />
+                    <${RatingBadge} label="IMDb" value=${movie.imdb_rating} max=${10}
+                        href=${movie.imdb_id
+                            ? `https://www.imdb.com/title/${movie.imdb_id}/`
+                            : (movie.imdb_rating != null ? `https://www.imdb.com/find/?q=${encodeURIComponent(movie.title + " " + movie.year)}&s=tt&ttype=ft` : null)} />
+                    <${RatingBadge} label="RT" value=${movie.rt_expert_rating} max=${100}
+                        href=${movie.rt_expert_rating != null ? `https://www.rottentomatoes.com/search/?search=${encodeURIComponent(movie.title)}` : null} />
+                    <${RatingBadge} label="Audience" value=${movie.rt_audience_rating} max=${100}
+                        href=${movie.rt_audience_rating != null ? `https://www.rottentomatoes.com/search/?search=${encodeURIComponent(movie.title)}` : null} />
                 </div>
                 ${movie.enrichment_error && html`<p className="enrichment-error">${movie.enrichment_error}</p>`}
                 <div className="movie-actions">
