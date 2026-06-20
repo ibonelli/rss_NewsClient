@@ -8,7 +8,7 @@
 - Scheduled polling (~2 hours via system cron) for all feeds
 - SQLite/MySQL database for persistent storage (dual-backend)
 - Rating enrichment from free sources (IMDb, RT expert, RT audience)
-- CLI Filter Processor — regex filter against `filters` table; Claude CLI for AI-filtered feeds
+- CLI Ingester handles regex matching for `filtered` feeds inline
 - FastAPI web application for filtered movie browsing and news reading
 - Configurable genre-specific filtering rules (config file)
 - Config-driven news feed and filter definitions synced to `filters` table
@@ -20,7 +20,8 @@
 - Multi-user support / authentication
 - Mobile notifications
 - Deployment to cloud/remote servers (local only)
-- Paid API integrations (except Claude CLI for AI-filtered feeds)
+- Paid API integrations
+- Hosting or invoking any AI classification tool
 
 ## 2) Milestones
 
@@ -30,7 +31,7 @@
 | M2 — Enrichment | Movies are enriched with IMDb + RT ratings from free sources. Failures handled gracefully. | Self |
 | M3 — Web Application (Movies) | FastAPI app serves filtered, grouped movie view. Read-tracking works. | Self |
 | M4 — Alerting + Polish | Email alerts on feed downtime >24h. Config-driven filtering is tunable. | Self |
-| M5 — News Feeds | CLI Ingester fetches news feeds. CLI Filter Processor applies regex and AI filtering. News tab in web UI with read tracking and AI-filtered sub-views. | Self |
+| M5 — News Feeds | CLI Ingester fetches news feeds and applies regex matching inline. News tab in web UI with read tracking, AI-filtered sub-views, and export/import workflow for AI-filtered feeds. | Self |
 
 ## 3) Work Breakdown (Epics → Stories)
 
@@ -65,7 +66,10 @@
 - **Story 5.1:** Extend config schema for news feed definitions with `type` field; sync `filters` table at filter processor startup (FR-019, C-007)
 - **Story 5.2:** CLI Ingester — fetch news RSS/Atom feeds, store all items to `news_items` (FR-020, FR-021, FR-026)
 - **Story 5.3:** CLI Filter Processor — regex pass: match items against `filters` table, write `matched_filter_id` FK (FR-022)
-- **Story 5.4:** CLI Filter Processor — AI pass: collect unprocessed and unread items, invoke Claude CLI with context, upsert `ai_filtered_views` (FR-023, FR-024, NFR-005, C-008)
+- ~~**Story 5.4:** Removed — Claude CLI AI pass no longer applicable (see ADR-009).~~
+- **Story 5.4a:** Web UI — `GET /api/news/{feed}/export` endpoint: returns unread `news_items` + `keep_as_context` `ai_filtered_views` as a JSON download (FR-033, NFR-006)
+- **Story 5.4b:** Web UI — `POST /api/news/{feed}/import` endpoint: replace `ai_filtered_views` for the feed with imported rows; persist `source_item_id` FK (FR-034)
+- **Story 5.4c:** News tab UI — Export download button and file-upload import control for `ai_filtered` feeds (FR-035, FR-036)
 - **Story 5.5:** Extend feed health tracking and email alerting to all news feeds (FR-025, FR-007)
 
 ### Epic 6: News Web UI (M5)
@@ -77,7 +81,7 @@
 
 ## 4) Dependencies
 - **External teams:** None (solo project)
-- **Vendors:** Free-tier API access (OMDb/TMDb/imdbapi.dev); Claude CLI installed and authenticated on local machine (C-008)
+- **Vendors:** Free-tier API access (OMDb/TMDb/imdbapi.dev)
 - **Environments:** Local machine with Python, system cron, local SMTP server
 - **Approvals:** None
 
@@ -89,10 +93,9 @@
 | Filter tuning difficulty | Genre-specific thresholds hard to calibrate initially | Make thresholds easily adjustable via config; iterate after first data |
 | Free rating APIs may be unreliable | Missing or stale ratings | Support multiple sources; graceful fallback; enrich asynchronously |
 | YTS RSS feed format changes | Ingestion breaks silently | Validate parsed fields; alert on parse failures |
-| Claude CLI not installed/authenticated | AI-filtered feeds silently fail | Check at filter processor startup; log clearly and skip feed rather than crash |
-| Claude CLI output schema variability | Parsing failures, data loss | Enforce strict JSON schema in prompt; validate response before persisting |
+| Import JSON schema mismatch | Import silently drops fields or fails | Validate import payload against expected schema before persisting; return clear error on failure |
+| User forgets to re-import after new items arrive | AI-filtered view goes stale | UI could show count of unread items pending export as a visual cue |
 | News RSS format variability (Atom vs RSS 2.0) | Parser fails on some feeds | Use `feedparser` library; log unparseable items and skip |
-| AI processing latency | Filter processor blocks cron cycle | Configurable timeout per feed (NFR-005); log and skip on timeout |
 
 ## 6) Rollout strategy
 - **Direct local deploy** — no staged rollout needed for personal project
