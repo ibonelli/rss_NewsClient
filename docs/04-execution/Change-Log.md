@@ -4,12 +4,12 @@
 
 ### Planned
 - CLI Ingester: extend to fetch news RSS/Atom feeds; store all items to `news_items`; update `feed_health` per news feed
-- CLI Filter Processor (`src/cli/filter.py`): new process; sync `filters` table from config; regex pass on filtered feeds; Claude CLI AI pass on AI-filtered feeds; upsert `ai_filtered_views` and `categories`
-- FastAPI Web UI: News tab with per-feed-type views (unfiltered / filtered / AI-filtered + raw sub-view)
-- Read/unread tracking for `news_items` and `ai_filtered_views`; `keep_as_context` toggle for AI-filtered view rows
+- CLI Filter Processor (`src/cli/filter.py`): new process; sync `filters` table from config; regex-flag matching `news_items` via `matched_filter_id` — never deletes rows, no AI invocation
+- FastAPI Web UI: News tab with per-feed-type views (unfiltered / filtered / AI-filtered + raw sub-view); `GET /api/news/{feed}/export` and `POST /api/news/{feed}/import` endpoints for AI-filtered feeds
+- Read/unread tracking for `news_items` and `ai_filtered_views`; `keep_as_context` toggle for AI-filtered view rows; Export and Import UI controls in News tab
 - Feed health alerting extended to all news feeds
-- New DB tables: `news_items`, `filters`, `categories`, `ai_filtered_views`; `feed_health` updated to multi-row (one per feed)
-- `config.yaml`: `news_feeds` block with `type`, per-feed `filters`, `claude_prompt`, `claude_timeout_seconds`
+- New DB tables: `news_items`, `filters`, `ai_filtered_views` (with `source_item_id` FK, denormalized `title`/`url`/`published_at`, `category` as text); `feed_health` updated to multi-row (one per feed)
+- `config.yaml`: `news_feeds` block with `type` and per-feed `filters` (no AI-specific config)
 - New dependency: `feedparser`
 - Cron updated: `python src/cli/main.py && python src/cli/filter.py`
 

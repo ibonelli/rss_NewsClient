@@ -40,7 +40,7 @@
 - ADR-005: `src/cli/` + `src/webui/` + `src/common/` structure instead of unified `pelis/` package
 - ADR-006: Three-process architecture — CLI Ingester + CLI Filter Processor + FastAPI Web UI *(Filter Processor pending M5)*
 - ADR-007: Two-table design for AI-filtered news (`news_items` + `ai_filtered_views`) *(pending M5)*
-- ADR-008: Claude CLI for AI-filtered news processing *(pending M5)*
+- ADR-009: Export/import replaces Claude CLI for AI-filtered news — app never invokes AI directly *(supersedes ADR-008)*
 
 ## Edge cases handled
 - RSS feed format changes: parser logs warnings for unparseable entries, does not crash
@@ -80,13 +80,13 @@ Covers Epics 5 and 6 from the Delivery Plan: news feed ingestion, regex + AI fil
 ### Files to create
 
 **src/cli/**
-- `src/cli/filter.py` — Filter Processor entry point: sync `filters` table from config, run regex pass, run AI pass per AI-filtered feed, upsert `ai_filtered_views` and `categories`
+- `src/cli/filter.py` — Filter Processor entry point: sync `filters` table from config; regex-match `news_items` for `filtered` feeds; set `matched_filter_id` on matches — never deletes rows, no AI invocation
 
 **src/common/**
-- `src/common/models.py` — extend with: `NewsItem`, `Filter`, `Category`, `AIFilteredView` models; update `FeedHealth` to multi-row (add `feed_name` column, remove single-row assumption)
+- `src/common/models.py` — extend with: `NewsItem`, `Filter`, `AIFilteredView` models; update `FeedHealth` to multi-row (add `feed_name` column, remove single-row assumption). `AIFilteredView` fields: `source_item_id` (FK → news_items), `feed_name`, `title`, `url`, `published_at`, `category` (text), `summary`, `tags` (JSON), `is_read`, `keep_as_context`, `ingested_at`
 
 **src/webui/**
-- `src/webui/routes.py` — extend with all news API routes: `/api/news`, `/api/news/{feed_name}/items`, `/api/news/{feed_name}/raw`, read/unread/keep/unkeep endpoints
+- `src/webui/routes.py` — extend with all news API routes: `/api/news`, `/api/news/{feed_name}/items`, `/api/news/{feed_name}/raw`, read/unread/keep/unkeep endpoints, `GET /api/news/{feed_name}/export`, `POST /api/news/{feed_name}/import`
 - `src/webui/static/app.js` — extend React UI with News tab, feed type sub-views (unfiltered / filtered / AI-filtered / raw)
 
 **src/cli/ (extend existing)**
@@ -95,14 +95,13 @@ Covers Epics 5 and 6 from the Delivery Plan: news feed ingestion, regex + AI fil
 - `src/cli/main.py` — call news fetching after movie ingestion; update `FeedHealth` per news feed
 
 **Root**
-- `config.yaml` / `config.yaml.example` — add `news_feeds` block (name, url, type, filters, claude_prompt, claude_timeout_seconds)
+- `config.yaml` / `config.yaml.example` — add `news_feeds` block (name, url, type, filters); no AI-specific config needed
 - `requirements.txt` — add `feedparser`
 
 ### Key constraints to enforce
 - **C-007:** All feed definitions and filter patterns MUST come from `config.yaml`, never hardcoded
-- **C-008:** AI-filtered feeds MUST invoke `claude --print` subprocess; no other AI service
-- **NFR-005:** Each AI-filtered feed invocation MUST respect `claude_timeout_seconds`; log and skip on timeout
-- **NFR-006:** Log item count sent to and received from Claude per feed per run
+- **C-008:** AI-filtered feeds MUST NOT invoke any AI service — provide export/import endpoints only (ADR-009)
+- **NFR-006:** Log item counts on export (unread + context) and on import (received / persisted / discarded)
 - **F-004:** No paid third-party news enrichment APIs
 
 ### Migration steps (M5)
@@ -113,10 +112,11 @@ The following new tables are added by `create_all()` — no manual SQL needed on
 ### Edge cases to handle
 - **News feed deduplication:** skip `news_items` rows with a duplicate `(url, feed_name)` — idempotent re-ingestion
 - **Filtered feed with no matches:** valid state — `matched_filter_id` remains null for all items; nothing appears in News tab filtered view (correct behaviour)
-- **Claude CLI not installed:** check subprocess availability at Filter Processor startup; log clearly, skip AI-filtered feeds for the cycle, do not crash
-- **Claude returns ID not in input batch:** discard silently (V-016); log warning
-- **Claude returns invalid JSON:** catch `json.JSONDecodeError`; log raw output excerpt; skip AI pass for that feed
-- **`keep_as_context` rows:** never overwrite `is_read` or `keep_as_context` when upserting existing `ai_filtered_views` rows (V-020)
+- **Import payload not valid JSON:** return `400 Bad Request`; leave existing `ai_filtered_views` unchanged
+- **Import row with unknown `source_item_id`:** discard row and log warning (V-016); persist remaining valid rows
+- **Import row missing `title` or `url`:** discard row and log warning (V-020); persist remaining valid rows
+- **Export for feed with no unread items:** valid — returns empty `unread_items` array; still includes `context_items` if any
+- **`keep_as_context` on re-import:** `is_read` and `keep_as_context` reset to `false` on each full replace — export captures keep_as_context items before that happens so the external tool can re-include them
 - **Atom vs RSS 2.0:** use `feedparser` to normalise both formats; log and skip unparseable items
 - **Empty news feed:** zero items fetched is valid — update `feed_health` as success, log item count
 
@@ -124,9 +124,11 @@ The following new tables are added by `create_all()` — no manual SQL needed on
 1. Add at least one news feed of each type to `config.yaml`
 2. Run ingester: `python src/cli/main.py` — verify `news_items` rows appear in DB
 3. Run filter processor: `python src/cli/filter.py`
-   - Filtered feed: verify `matched_filter_id` is set on matching items
-   - AI-filtered feed: verify `ai_filtered_views` rows appear with category/summary/tags
+   - Filtered feed: verify `matched_filter_id` is set on matching items; non-matching items remain with null (not deleted)
+   - AI-filtered feed: no action taken by filter.py (export/import is user-triggered)
 4. Run web app and open News tab — verify each feed type renders correctly
 5. Mark a news item as read — verify it persists after page refresh
 6. For an AI-filtered feed: verify raw sub-view shows all `news_items` for that feed
-7. Set `keep_as_context = true` on an AI-filtered view item; re-run filter processor — verify that item appears in the context section sent to Claude (check logs)
+7. Click Export on an AI-filtered feed — verify JSON download contains `unread_items` (with `id`) and `context_items`
+8. Upload a valid import JSON — verify `ai_filtered_views` rows appear in the AI-filtered sub-view
+9. Set `keep_as_context = true` on an AI-filtered view item; click Export again — verify that item appears in `context_items` of the downloaded JSON
