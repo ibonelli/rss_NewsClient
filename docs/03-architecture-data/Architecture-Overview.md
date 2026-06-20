@@ -4,9 +4,9 @@
 
 | Component | Responsibility | Runtime |
 |---|---|---|
-| **CLI Ingester** (`src/cli/main.py`) | Fetch all RSS/Atom feeds (movie + news), parse, deduplicate (movies), store raw data to `movies` and `news_items`, update feed health | Cron-triggered process (runs and exits, step 1) |
+| **CLI Ingester** (`src/cli/main.py`) | Fetch all RSS/Atom feeds (movie + series + news), parse, deduplicate (movies and series), store raw data to `movies`, `series`, and `news_items`, update feed health | Cron-triggered process (runs and exits, step 1) |
 | **CLI Filter Processor** (`src/cli/filter.py`) | Sync `filters` table from config; for each `filtered` feed, regex-match `news_items` and set `matched_filter_id` on matches — never deletes rows | Cron-triggered process (runs and exits, step 2 — immediately after Ingester) |
-| **FastAPI Web UI** (`src/webui/main.py`) | JSON API for movies and news (filtering, read-tracking, on-demand enrichment); AI-filtered export (`GET`) and import (`POST`) endpoints; static React frontend | Long-running local process (on-demand) |
+| **FastAPI Web UI** (`src/webui/main.py`) | JSON API for movies, series, and news (filtering, read-tracking, on-demand enrichment); AI-filtered export (`GET`) and import (`POST`) endpoints; static React frontend | Long-running local process (on-demand) |
 | **Database** (MySQL/SQLite) | Persistent state for all data | Shared resource |
 | **Config file** (`config.yaml`) | Feed definitions, filter patterns, rating thresholds, connection strings | Shared resource (read by both processes) |
 | **External AI Tool** | Consumes export JSON, produces import JSON; operated entirely outside this application | External (user-operated) |
@@ -16,15 +16,15 @@
 ```
 src/
 ├── cli/
-│   ├── main.py         # Ingester entry point
+│   ├── main.py         # Ingester entry point (movies, series, and news)
 │   ├── filter.py       # Filter Processor entry point (regex flagging only)
-│   ├── fetcher.py      # RSS/Atom fetch + parse (movies and news)
-│   ├── dedup.py        # Movie deduplication logic
+│   ├── fetcher.py      # RSS/Atom fetch + parse (movies, series via EZTV, and news)
+│   ├── dedup.py        # Movie and series deduplication logic
 │   └── alerter.py      # Feed health check + SMTP alert
 ├── webui/
 │   ├── main.py         # Uvicorn entry point
 │   ├── app.py          # FastAPI app factory + static file mounting
-│   ├── routes.py       # JSON API route handlers
+│   ├── routes.py       # JSON API route handlers (movies, series, news)
 │   ├── filters.py      # Movie filtering + sorting logic
 │   ├── enrichment.py   # On-demand OMDb/TMDb enrichment
 │   └── static/
@@ -43,7 +43,7 @@ src/
 
 | Command | Description | Schedule |
 |---|---|---|
-| `python src/cli/main.py` | Fetch all feeds, store raw data, update feed health | Every ~2h (cron step 1) |
+| `python src/cli/main.py` | Fetch all feeds (movies, series, news), store raw data, update feed health | Every ~2h (cron step 1) |
 | `python src/cli/filter.py` | Sync filters from config; regex-flag `news_items` for `filtered` feeds | Every ~2h (cron step 2, immediately after step 1) |
 | `python src/webui/main.py` | Start FastAPI web app (Uvicorn) | Manual, on-demand |
 
@@ -62,6 +62,14 @@ src/
 | POST | `/api/movies/{id}/enrich` | Trigger on-demand rating enrichment |
 | GET | `/api/health` | Feed health status for all feeds |
 | GET | `/static/*` | Static assets (JS, CSS) |
+
+**Series**
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/series` | All series grouped by title → season → episode |
+| POST | `/api/series/{id}/read` | Mark series entry as read |
+| POST | `/api/series/{id}/unread` | Mark series entry as unread |
 
 **News**
 
@@ -85,9 +93,9 @@ All three processes connect via SQLAlchemy using `database.url` from `config.yam
 
 | Process | Reads | Writes |
 |---|---|---|
-| CLI Ingester | — | `movies`, `news_items`, `feed_health` |
+| CLI Ingester | — | `movies`, `series`, `news_items`, `feed_health` |
 | CLI Filter Processor | `news_items`, `filters` | `filters` (sync), `news_items.matched_filter_id` |
-| FastAPI Web UI | `movies`, `news_items`, `ai_filtered_views`, `feed_health`, `filters` | `movies.is_read`, `movies` (enrichment), `news_items.is_read`, `ai_filtered_views` (full replace on import), `ai_filtered_views.is_read`, `ai_filtered_views.keep_as_context` |
+| FastAPI Web UI | `movies`, `series`, `news_items`, `ai_filtered_views`, `feed_health`, `filters` | `movies.is_read`, `movies` (enrichment), `series.is_read`, `news_items.is_read`, `ai_filtered_views` (full replace on import), `ai_filtered_views.is_read`, `ai_filtered_views.keep_as_context` |
 
 **Concurrency:** SQLite has a single-writer limitation — acceptable since Ingester and Filter Processor run sequentially in the same cron chain, and web app writes are infrequent (read-tracking and occasional imports). MySQL handles concurrent reads and writes without issue.
 
@@ -117,6 +125,8 @@ Not applicable (single user, local machine). MySQL handles concurrent reads well
 | Failure | Detection | Impact | Recovery |
 |---|---|---|---|
 | Movie RSS feed down | `feed_health` last_success_at threshold exceeded | No new movies | Auto-retry next cron cycle; email alert after 24h |
+| EZTV series feed down | `feed_health` threshold exceeded for `eztv_series` | No new series episodes | Auto-retry next cron cycle; email alert after 24h |
+| EZTV title format changed | Parser logs skipped entries (V-027) | Some episodes not ingested | Manual regex update in `fetcher.py` |
 | News RSS feed down | Same — per-feed `feed_health` row | No new items for that feed | Auto-retry next cron cycle; email alert after 24h |
 | RSS/Atom format changed | Parser logs warning on unexpected structure | Some items not ingested | Manual parser update |
 | Enrichment API unavailable | HTTP timeout/error caught | Movie shows without ratings | User retries via "refresh ratings" button |
@@ -164,8 +174,9 @@ Not applicable (single user, local machine). MySQL handles concurrent reads well
 ### Maintainability (NFR-003)
 - Clear separation: `src/cli/` (ingestion + filtering), `src/webui/` (web layer), `src/common/` (shared models, config, DB)
 
-### Cost (NFR-004)
+### Cost (NFR-004, C-004, C-009)
 - Movie enrichment uses free-tier APIs only (OMDb free tier, TMDb, imdbapi.dev)
+- Series records stored as-is from RSS — no enrichment API calls
 - No AI service costs incurred by the application (C-004, C-008)
 
 ### ~~AI Timeout (NFR-005)~~ — Removed
@@ -184,6 +195,7 @@ Not applicable (single user, local machine). MySQL handles concurrent reads well
 | C-003 (Three processes) | CLI Ingester (cron step 1) + CLI Filter Processor (cron step 2) + FastAPI Web UI (long-running) |
 | C-004 (No paid APIs for movie enrichment) | Free-tier sources only for movies; no AI service costs incurred by the app |
 | C-005 (Local SMTP) | `smtplib` with configurable SMTP host/port |
-| C-006 (Web UI via FastAPI) | FastAPI serves static React app (CDN-loaded, no build step) + JSON API |
-| C-007 (Config file) | `config.yaml` for all configurable values — feeds, filters, thresholds |
+| C-006 (Web UI via FastAPI) | FastAPI serves static React app (CDN-loaded, no build step) + JSON API; Movies, Series, and News tabs |
+| C-007 (Config file) | `config.yaml` for all configurable values — feeds, filters, thresholds, series feed URL |
 | C-008 (AI integration) | Export/import endpoints on Web UI; app never invokes any AI service directly (ADR-009) |
+| C-009 (No paid series APIs) | Series records stored as-is from EZTV RSS; no enrichment API calls |

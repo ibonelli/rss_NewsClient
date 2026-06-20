@@ -99,3 +99,52 @@ This script (idempotent — safe to re-run) applies:
    - **AI-filtered feed:** click "Export Unread" — verify JSON downloads with `unread_items` + `context_items`; upload a valid import file — verify `ai_filtered_views` rows appear
    - **Raw sub-view:** toggle "Show Raw Items" on an AI-filtered feed — verify all `news_items` appear
 7. Stop the feed source or wait 24h+ without ingesting — verify email alert fires
+
+---
+
+## M6 — Series Feed (planned — not yet implemented)
+
+### Scope
+- `Series` DB table and SQLAlchemy model
+- EZTV RSS fetcher + S##E## parser in `fetcher.py`
+- Series deduplication (merge quality variants) in `dedup.py`
+- Feed health + alerter extended to EZTV feed
+- `GET /api/series`, `POST /api/series/{id}/read`, `POST /api/series/{id}/unread` routes
+- Series tab in React frontend (title → season → episode grouping, IMDb link, torrent links)
+
+### Files to touch
+- `src/common/models.py` — add `Series` model
+- `src/cli/fetcher.py` — add `fetch_series_feed()` for EZTV RSS; add title parser
+- `src/cli/dedup.py` — add `dedup_series()` (merge qualities by title+season+episode)
+- `src/cli/main.py` — call series fetcher + deduplicator; update feed health for EZTV
+- `src/cli/alerter.py` — include EZTV feed in downtime check
+- `src/webui/routes.py` — add series API endpoints
+- `src/webui/static/app.js` — add Series tab component
+- `config.yaml` / `config.yaml.example` — add `series_feed.url`
+
+### Key decisions
+- ADR-010: IMDb ID parsed from feed; URL constructed at render time; null → no link
+- ADR-011: Quality variants as JSON array `[{"quality": "...", "torrent_page_url": "..."}]` on the series row
+
+### Edge cases to handle
+- Title contains no S##E## pattern → log and skip (V-027)
+- `imdb_id` absent from RSS entry → store null; omit IMDb link in UI (ADR-010)
+- Duplicate quality variant on re-ingestion → merge (union by `quality` value; V-025)
+- EZTV feed unreachable → update `feed_health`, do not crash; alert after 24h (FR-043, FR-047)
+- Season 0 / episode 0 entries (specials) → store as-is; valid per V-022/V-023
+
+### Known unknowns (resolve before implementing)
+- Q-009: Inspect live EZTV RSS XML to confirm field names (`<imdb>`, `<link>`, title format)
+- Q-010: Decide handling for non-SxxExx entries (current decision: skip and log)
+- Q-011: Confirm IMDb ID is per-entry in the feed (informs dedup merge strategy for `imdb_id`)
+
+### Migration steps
+- Fresh DB: `create_all()` on startup creates `series` table automatically
+- Existing DB: manual `ALTER TABLE` or new `migrate_002_series.sh` idempotent script
+
+### How to test locally
+1. Run ingester: `python src/cli/main.py` — verify `series` table populated from EZTV feed
+2. Open web app → Series tab — verify grouping by title → season → episode
+3. Confirm multiple quality variants of same episode appear as separate links in one row
+4. Confirm series title links to IMDb (where `imdb_id` is not null)
+5. Simulate EZTV feed down → verify email alert fires after 24h

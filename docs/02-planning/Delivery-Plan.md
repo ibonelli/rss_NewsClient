@@ -9,19 +9,23 @@
 - SQLite/MySQL database for persistent storage (dual-backend)
 - Rating enrichment from free sources (IMDb, RT expert, RT audience)
 - CLI Filter Processor — regex-matches `news_items` for `filtered` feeds; flags matches via `matched_filter_id`; never deletes rows
-- FastAPI web application for filtered movie browsing and news reading
+- FastAPI web application for filtered movie browsing, series browsing, and news reading
 - Configurable genre-specific filtering rules (config file)
 - Config-driven news feed and filter definitions synced to `filters` table
-- Read-tracking via web UI (persisted in DB) for movies and news
+- Read-tracking via web UI (persisted in DB) for movies, series, and news
 - Email alerting (local SMTP) when any feed is down >24h
+- EZTV RSS ingestion for TV series with S##E## parsing and quality variant grouping
+- Series tab in the web UI (title → season → episode, IMDb link per series, torrent page link per quality variant)
 
 ### Out of scope
-- Downloading or streaming movies
+- Downloading or streaming movies or series
 - Multi-user support / authentication
 - Mobile notifications
 - Deployment to cloud/remote servers (local only)
 - Paid API integrations
 - Hosting or invoking any AI classification tool
+- Rating enrichment for series (OMDb lacks reliable episode-level data)
+- AI-assisted filtering for series
 
 ## 2) Milestones
 
@@ -32,6 +36,7 @@
 | M3 — Web Application (Movies) | FastAPI app serves filtered, grouped movie view. Read-tracking works. | Self |
 | M4 — Alerting + Polish | Email alerts on feed downtime >24h. Config-driven filtering is tunable. | Self |
 | M5 — News Feeds | CLI Ingester fetches news feeds. CLI Filter Processor flags matching items via regex. News tab in web UI with read tracking, AI-filtered sub-views, and export/import workflow for AI-filtered feeds. | Self |
+| M6 — Series Feed | CLI Ingester fetches EZTV RSS, parses and deduplicates series entries. Series tab in web UI shows episodes grouped by title → season, with IMDb and torrent page links per quality variant. Read-tracking and alerting work. | Self |
 
 ## 3) Work Breakdown (Epics → Stories)
 
@@ -79,6 +84,18 @@
 - **Story 6.4:** AI-filtered feed view — from `ai_filtered_views` with category, summary, tags (FR-031)
 - **Story 6.5:** Raw unprocessed sub-view for AI-filtered feeds — all `news_items` for that feed (FR-032)
 
+### Epic 7: Series Ingestion (M6)
+- **Story 7.1:** Add `Series` table to DB model (FR-042)
+- **Story 7.2:** Implement EZTV RSS fetcher with error handling (FR-039, NFR-001)
+- **Story 7.3:** Implement series title parser — regex for series name, S##E##, quality; extract IMDb ID and torrent page URL from feed fields (FR-040)
+- **Story 7.4:** Implement deduplication — merge quality variants by `title+season+episode` (FR-041)
+- **Story 7.5:** Extend feed health tracking and alerter to EZTV feed (FR-043, FR-047)
+
+### Epic 8: Series Web UI (M6)
+- **Story 8.1:** Add Series tab to FastAPI web app (FR-044)
+- **Story 8.2:** Implement grouping — series title → season → episode, with IMDb link per title and torrent page link per quality variant (FR-045)
+- **Story 8.3:** Implement read-tracking for series entries (FR-046)
+
 ## 4) Dependencies
 - **External teams:** None (solo project)
 - **Vendors:** Free-tier API access (OMDb/TMDb/imdbapi.dev)
@@ -96,6 +113,9 @@
 | Import JSON schema mismatch | Import silently drops fields or fails | Validate import payload against expected schema before persisting; return clear error on failure |
 | User forgets to re-import after new items arrive | AI-filtered view goes stale | UI could show count of unread items pending export as a visual cue |
 | News RSS format variability (Atom vs RSS 2.0) | Parser fails on some feeds | Use `feedparser` library; log unparseable items and skip |
+| EZTV title format inconsistency | Parser misses entries without standard S##E## pattern | Log and skip unparseable entries; revisit regex after live feed inspection (Q-009, Q-010) |
+| IMDb ID absent from some EZTV RSS entries | Series IMDb link missing for those entries | Store IMDb ID as nullable; omit link in UI when absent (Q-011) |
+| EZTV feed reliability | Series ingestion breaks silently | Existing feed health + alerter pattern covers this (FR-043, FR-047) |
 
 ## 6) Rollout strategy
 - **Direct local deploy** — no staged rollout needed for personal project

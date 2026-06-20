@@ -1,18 +1,21 @@
 # High-Level Design (HLD) — pelis-feed
 
 ## 1) Overview
-- **What:** An automated movie and news discovery pipeline with a web-based viewer
-- **Why:** Eliminate manual RSS browsing by automating ingestion, filtering (regex and AI-assisted), and presenting quality movies and relevant news in a clean local UI
+- **What:** An automated movie, TV series, and news discovery pipeline with a web-based viewer
+- **Why:** Eliminate manual RSS browsing by automating ingestion, filtering (regex and AI-assisted), and presenting quality movies, TV series episodes, and relevant news in a clean local UI
 
 ## 2) System Context
 
 ```
-┌─────────────────┐    ┌─────────────────────────────┐
-│  YTS RSS Feed   │───▶│   CLI Ingester (cron step 1) │──▶ movies
-└─────────────────┘    │                              │──▶ news_items
-┌─────────────────┐    │                              │──▶ feed_health
-│  News RSS/Atom  │───▶│                              │
-│  Feeds (n)      │    └──────────────┬───────────────┘
+┌─────────────────┐    ┌──────────────────────────────┐
+│  YTS RSS Feed   │───▶│   CLI Ingester (cron step 1)  │──▶ movies
+└─────────────────┘    │                               │──▶ series
+┌─────────────────┐    │                               │──▶ news_items
+│  EZTV RSS Feed  │───▶│                               │──▶ feed_health
+└─────────────────┘    │                               │
+┌─────────────────┐    │                               │
+│  News RSS/Atom  │───▶│                               │
+│  Feeds (n)      │    └──────────────┬────────────────┘
 └─────────────────┘         (cron step 2, after ingester)
                                       ▼
                        ┌──────────────────────────────┐
@@ -49,7 +52,7 @@
 ```
 
 - **Actors:** Self (sole user, via browser)
-- **External systems:** YTS RSS feed, news RSS/Atom feeds, free rating APIs, local SMTP, external AI tool (user-operated separately)
+- **External systems:** YTS RSS feed, EZTV RSS feed, news RSS/Atom feeds, free rating APIs, local SMTP, external AI tool (user-operated separately)
 - **Trust boundaries:** All local — no authentication needed (single-user, localhost only)
 
 ## 3) Proposed Solution
@@ -58,9 +61,9 @@
 
 | Component | Responsibility | Process |
 |---|---|---|
-| **CLI Ingester** | Fetch all RSS/Atom feeds (movie + news), parse, deduplicate (movies), store raw data, check feed health | Process 1 (cron step 1) |
+| **CLI Ingester** | Fetch all RSS/Atom feeds (movie + series + news), parse, deduplicate (movies and series), store raw data, check feed health | Process 1 (cron step 1) |
 | **CLI Filter Processor** | Sync `filters` table from config; for each `filtered` feed, regex-match unprocessed `news_items` and set `matched_filter_id` on matches — never deletes rows | Process 2 (cron step 2, after Ingester) |
-| **FastAPI Web UI** | Serve filtered movie view, news tab with filtered/AI-filtered/raw sub-views, read-tracking, on-demand movie enrichment, AI-filtered export (`GET`) and import (`POST`) endpoints | Process 3 (long-running) |
+| **FastAPI Web UI** | Serve filtered movie view, series tab, news tab with filtered/AI-filtered/raw sub-views, read-tracking, on-demand movie enrichment, AI-filtered export (`GET`) and import (`POST`) endpoints | Process 3 (long-running) |
 | **Database (SQLite/MySQL)** | Persistent storage for all data | Shared resource |
 | **Config file** | Feed definitions, filter rules, rating thresholds | Shared resource |
 | **External AI Tool** | Consumes export JSON; produces import JSON; operated entirely outside this application | External (user-operated) |
@@ -74,24 +77,30 @@
 4. Feed health timestamp recorded per feed
 5. Alert check: if last success >24h ago, send email via SMTP
 
-**News pipeline (runs in same cron invocation as movies):**
-6. Ingester fetches each configured news feed (RSS/Atom)
-7. All items stored to `news_items` regardless of feed type
-8. Feed health recorded per news feed
+**Series pipeline (runs in same cron invocation as movies):**
+6. Ingester fetches EZTV RSS XML from `https://eztv.re/ezrss.xml`
+7. Parser extracts series name, season number, episode number, quality, IMDb ID, and torrent page URL from each entry
+8. Deduplication merges new quality variants into existing `title+season+episode` row
+9. Feed health timestamp recorded for EZTV feed
+
+**News pipeline (runs in same cron invocation):**
+10. Ingester fetches each configured news feed (RSS/Atom)
+11. All items stored to `news_items` regardless of feed type
+12. Feed health recorded per news feed
 
 **Filter Processor (cron step 2, immediately after Ingester):**
-9. Syncs `filters` table from config (upsert by feed_name + name)
-10. For each `filtered` feed: regex-matches `news_items` against `filters` table; sets `matched_filter_id` FK on matches. Items that do not match are left with `matched_filter_id = null` — they remain in the DB but are hidden from the filtered UI view. No rows are deleted.
+13. Syncs `filters` table from config (upsert by feed_name + name)
+14. For each `filtered` feed: regex-matches `news_items` against `filters` table; sets `matched_filter_id` FK on matches. Items that do not match are left with `matched_filter_id = null` — they remain in the DB but are hidden from the filtered UI view. No rows are deleted.
 
 **Web UI (on-demand):**
-12. User opens browser; FastAPI reads DB, applies config-based movie filters, renders grouped/sorted view
-13. User marks movies or news as read → DB toggle
-14. User triggers movie enrichment → on-demand OMDb/TMDb API call
+15. User opens browser; FastAPI reads DB, applies config-based movie filters, renders grouped/sorted view
+16. User marks movies, series, or news as read → DB toggle
+17. User triggers movie enrichment → on-demand OMDb/TMDb API call
 
 **AI-filtered export/import (user-triggered via browser):**
-15. User clicks Export in News tab → `GET /api/news/{feed}/export` → JSON download with two sections: `unread_items` (news_items where is_read = false) and `context_items` (ai_filtered_views where keep_as_context = true)
-16. User runs exported JSON through external AI tool (outside the app)
-17. User uploads result via News tab → `POST /api/news/{feed}/import` → all existing `ai_filtered_views` for that feed are deleted and replaced with imported rows; each row carries `source_item_id` FK referencing its originating `news_items` row
+18. User clicks Export in News tab → `GET /api/news/{feed}/export` → JSON download with two sections: `unread_items` (news_items where is_read = false) and `context_items` (ai_filtered_views where keep_as_context = true)
+19. User runs exported JSON through external AI tool (outside the app)
+20. User uploads result via News tab → `POST /api/news/{feed}/import` → all existing `ai_filtered_views` for that feed are deleted and replaced with imported rows; each row carries `source_item_id` FK referencing its originating `news_items` row
 
 ### Database Schema (Conceptual)
 
@@ -109,6 +118,19 @@ movies
 ├── poster_url (nullable)
 ├── feed_entry_date
 ├── enrichment_date (nullable)
+├── is_read (boolean, default false)
+├── created_at
+└── updated_at
+
+series
+├── id (PK)
+├── title
+├── imdb_id (nullable)
+├── season (int)
+├── episode (int)
+├── qualities (JSON array: [{quality, torrent_page_url}])
+├── feed_entry_date
+├── ingested_at
 ├── is_read (boolean, default false)
 ├── created_at
 └── updated_at
@@ -156,6 +178,9 @@ ai_filtered_views
 ### Config File (Conceptual — YAML)
 
 ```yaml
+series_feed:
+  url: "https://eztv.re/ezrss.xml"
+
 filtering:
   default:
     min_imdb: 6.0
@@ -210,6 +235,7 @@ news_feeds:
 | Monolithic script | Single script that ingests + filters + generates report in one run | Harder to schedule independently; regex and AI processing concerns mixed |
 | React SPA + API | Separate frontend and backend | Over-engineered for a personal project; FastAPI + CDN React is sufficient |
 | Claude CLI invoked by app | App calls `claude` directly during ingestion or on-demand | Tight coupling to one AI tool; requires CLI installed/authenticated on app host; superseded by ADR-009 |
+| Separate series ingester process | Dedicated cron process for EZTV, independent of movie ingester | Unnecessary complexity for a solo project; CLI Ingester handles all feeds in one run |
 
 ## 5) Key Decisions
 
@@ -219,7 +245,7 @@ news_feeds:
 
 ### Availability (NFR-001)
 - CLI Ingester tolerates feed failures — logs error, retries next cron cycle
-- CLI Filter Processor tolerates Claude CLI failures per feed — logs and skips, does not crash
+- CLI Filter Processor tolerates failures per feed — logs and skips, does not crash
 - Web UI is on-demand (not a 24/7 service) — availability is user-controlled
 
 ### Performance (NFR-002)
@@ -229,8 +255,9 @@ news_feeds:
 ### Maintainability (NFR-003)
 - Clear separation: `src/cli/ingest.py`, `src/cli/filter.py`, `src/webui/`, `src/common/` (models, config)
 
-### Cost (NFR-004, C-004)
+### Cost (NFR-004, C-004, C-009)
 - Movie enrichment uses free-tier APIs only
+- No enrichment API calls for series — data stored as-is from RSS
 - No AI service costs incurred by the application (external tool is user-operated)
 
 ### ~~AI Timeout (NFR-005)~~ — Removed
@@ -249,6 +276,7 @@ news_feeds:
 | C-003 (Three processes) | CLI Ingester (cron step 1) + CLI Filter Processor (cron step 2) + FastAPI Web UI |
 | C-004 (No paid APIs for enrichment) | Only free-tier sources for movie enrichment; no AI service costs incurred by the app |
 | C-005 (Local SMTP) | `smtplib` for alerting |
-| C-006 (Web UI) | FastAPI + CDN React |
-| C-007 (Config file) | YAML config for filtering rules, feed definitions, filter patterns |
+| C-006 (Web UI) | FastAPI + CDN React; Movies, Series, and News tabs |
+| C-007 (Config file) | YAML config for filtering rules, feed definitions, filter patterns, series feed URL |
 | C-008 (AI integration) | Export/import endpoints on the Web UI; app never invokes any AI service directly (see ADR-009) |
+| C-009 (No paid series APIs) | Series records stored as-is from EZTV RSS; no enrichment API calls |

@@ -2,9 +2,10 @@
 
 ## 1) Goal
 - The system shall automatically ingest movie data from the YTS RSS feed and news from configurable RSS/Atom news feeds, provide on-demand rating enrichment for movies, and serve a filterable, read-tracked web-based view grouped appropriately for each content type. For AI-assisted news feeds, the system exposes a JSON export/import workflow so an external tool can classify items without any direct AI integration inside the application.
+- The system shall also ingest TV series episode data from the EZTV RSS feed, parse season/episode identifiers, group quality variants, and serve a browsable Series tab with the same read-tracking pattern as movies.
 
 ## 2) Personas / Users
-- Persona A: Self (sole user) — wants to discover quality movies and relevant news without manual browsing
+- Persona A: Self (sole user) — wants to discover quality movies, track TV series episodes, and read relevant news without manual browsing
 
 ## 3) Functional Requirements
 
@@ -12,7 +13,14 @@
 - **FR-001:** The system MUST fetch RSS data from `https://yts.ag/rss` every ~2 hours via a scheduled process.
 - **FR-002:** The system MUST store ingested movie data in a SQLite or MySQL database.
 - **FR-003:** The system MUST handle duplicate entries (same name or same torrent URL) by appending new information (e.g., different quality/resolution) to the existing movie record rather than creating a new entry.
-- **FR-008:** The system MUST track feed health by recording the timestamp of the last successful fetch for each configured feed (movie and news).
+- **FR-008:** The system MUST track feed health by recording the timestamp of the last successful fetch for each configured feed (movie, series, and news).
+
+### Ingestion — Series
+- **FR-039:** The system MUST fetch RSS data from `https://eztv.re/ezrss.xml` on the same ~2h cron schedule as movies.
+- **FR-040:** The system MUST parse each RSS entry to extract: series name, season number, episode number, quality/resolution, IMDb ID, and torrent download page URL.
+- **FR-041:** The system MUST deduplicate by `series_name + season + episode`, merging new quality variants into the existing record rather than creating a new row.
+- **FR-042:** The system MUST store series data in a dedicated `Series` database table.
+- **FR-043:** Feed health tracking MUST extend to the EZTV series feed.
 
 ### Ingestion — News
 - **FR-019:** The system MUST support ingesting from news RSS/Atom feeds configurable in `config.yaml`, each with a `type` field: `unfiltered`, `filtered`, or `ai_filtered`.
@@ -42,6 +50,12 @@
 - **FR-015:** Within each year section, movies MUST be ordered by genre priority: Action and Romantic Comedies first, Documentaries last, other genres in between.
 - **FR-016:** Filtering configuration MUST be stored in a config file (not hardcoded), adjustable without restarting the web application.
 
+### Web Application — Series
+- **FR-044:** The web application MUST provide a Series tab, distinct from Movies and News.
+- **FR-045:** The Series tab MUST group entries by series title → season → episode. Each series title MUST link to its IMDb page. Each quality variant within an episode row MUST link to its torrent download page.
+- **FR-046:** The Series tab MUST provide per-entry read/unread tracking persisted in the database, identical in behaviour to movies.
+- **FR-047:** The system MUST send an email alert if the EZTV feed is unreachable for more than 24 hours (reusing existing alerter logic).
+
 ### Web Application — News
 - **FR-028:** The web application MUST provide a separate "News" tab, distinct from the Movies tab.
 - **FR-029:** The news view MUST provide per-item read/unread tracking with behavior identical to movies (persisted in DB, survives restart).
@@ -64,25 +78,26 @@
 - **FR-018:** Read-tracking status MUST be persisted in the database and survive application restarts.
 
 ### Alerting
-- **FR-007:** The system MUST send an email alert via local SMTP if any configured feed (movie or news) is unreachable for more than 24 hours.
+- **FR-007:** The system MUST send an email alert via local SMTP if any configured feed (movie, series, or news) is unreachable for more than 24 hours.
 
 ## 4) Non-Functional Requirements (NFRs)
 - **NFR-001 (Availability):** The scheduler MUST tolerate transient feed failures without crashing — retry on next cycle.
 - **NFR-002 (Performance):** Report generation SHOULD complete within 30 seconds for up to 10,000 stored movies.
 - **NFR-003 (Maintainability):** Code MUST be written in Python with clear separation between ingestion, enrichment, and report generation.
-- **NFR-004 (Cost):** The system MUST NOT use paid APIs for movie rating enrichment.
+- **NFR-004 (Cost):** The system MUST NOT use paid APIs for movie or series metadata enrichment.
 - ~~**NFR-005:** Removed — Claude CLI timeout is no longer applicable.~~
 - **NFR-006 (Export/Import Observability):** The application SHOULD log the number of items included in each export request and the number of `ai_filtered_views` rows persisted on each import.
 
 ## 5) Data Requirements
 - **Movies:** title, year, genre(s), torrent URL, quality/resolution, IMDb ID (from enrichment), IMDb rating, RT expert rating, RT audience rating, poster URL, feed entry date, enrichment date, read status
+- **Series:** series title, IMDb ID, season number, episode number, quality variants (JSON list of `{quality, torrent_page_url}`), RSS entry date, ingestion timestamp, read status
 - **News — `news_items` (all feed types):** title, URL, publication date, source feed name, full content, ingestion timestamp, read status, matched_filter (nullable)
 - **News — `ai_filtered_views` (AI-filtered feeds only):** source feed name, title, URL, publication date, category, summary, tags (list), read status, keep-as-context flag, ingestion timestamp, source_item_id (FK → news_items)
 - Retention: indefinite (database on disk)
 - PII classification: None
 
 ## 6) Integration Requirements
-- Upstream: YTS RSS feed (`https://yts.ag/rss`), configurable news RSS/Atom feeds, TMDb/OMDb/imdbapi.dev or scraping for movie ratings
+- Upstream: YTS RSS feed (`https://yts.ag/rss`), EZTV RSS feed (`https://eztv.re/ezrss.xml`), configurable news RSS/Atom feeds, TMDb/OMDb/imdbapi.dev or scraping for movie ratings
 - Downstream: Local SMTP for email alerts; external AI tool (unconstrained — operated separately, consumes export JSON, produces import JSON)
 - Contracts: RSS XML format (subject to change without notice); export/import JSON schema defined in FR-033–FR-034
 
@@ -99,13 +114,21 @@
 - **AC-010:** The web UI News tab is accessible and displays news items independently of the Movies tab.
 - **AC-011:** For AI-filtered feeds, both the AI-filtered sub-view and the raw unprocessed sub-view are accessible in the News tab.
 - **AC-012:** After import, each `ai_filtered_views` row carries a `source_item_id` that correctly references its originating `news_items` row.
+- **AC-013:** Series episodes from the EZTV feed appear in the Series tab, grouped by series title → season → episode.
+- **AC-014:** Multiple quality variants of the same episode are merged into a single row, each with a working torrent download page link.
+- **AC-015:** Each series title in the UI links to its IMDb page.
+- **AC-016:** Read-tracking per series entry is persisted in the database and survives app restart.
+- **AC-017:** An email alert fires if the EZTV feed is unreachable for > 24 hours.
 
 ## 8) Open Questions
 - **Q-001:** Which free rating source is most reliable/complete for movies? (TMDb, OMDb free tier, imdbapi.dev, scraping?)
 - ~~**Q-002:** Resolved — see ADR-001 (FastAPI web app)~~
 - **Q-003:** What are the initial genre-specific rating thresholds? (can iterate via config)
 - **Q-004:** What genre ordering should be used between "Action/RomCom" (first) and "Documentary" (last)?
-- ~~**Q-005:** Resolved — Export schema: `{ "unread_items": [...news_items fields including id...], "context_items": [...ai_filtered_views fields...] }`. Import schema: `{ "views": [{ "source_item_id": <int>, "title", "url", "published_at", "category", "summary", "tags": [...] }] }`.~~
-- ~~**Q-006:** Resolved — pre-filtering before Claude is no longer applicable; the export/import design replaces this concern.~~
+- ~~**Q-005:** Resolved — Export schema defined in FR-033–FR-034.~~
+- ~~**Q-006:** Resolved — pre-filtering before Claude is no longer applicable.~~
 - **Q-007:** How should the News tab organize items within each feed — by date, by category, or configurable?
-- ~~**Q-008:** Resolved — no `ai_status` field; items Claude does not return simply have no `ai_filtered_views` row and do not surface in the filtered view.~~
+- ~~**Q-008:** Resolved — no `ai_status` field; items Claude does not return simply have no `ai_filtered_views` row.~~
+- **Q-009:** What is the exact EZTV RSS XML structure? (title format, available fields — needs live inspection before implementing the parser)
+- **Q-010:** How should entries without a valid S##E## match be handled — silently dropped, stored as-is, or logged?
+- **Q-011:** Is the IMDb ID provided per-episode entry in the EZTV RSS feed, or per-series? (Determines whether IMDb ID is stored at the series or episode level — needs live feed inspection alongside Q-009.)

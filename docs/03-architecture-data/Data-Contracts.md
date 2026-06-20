@@ -6,6 +6,10 @@
 - **Definition:** A movie entry discovered from the YTS RSS feed, potentially with multiple quality/resolution variants
 - **Owner:** CLI Ingester (creates/updates); Web UI (reads, marks as read, triggers enrichment)
 
+### Series
+- **Definition:** A TV series episode entry from the EZTV RSS feed. One row per unique `(title, season, episode)` combination; quality variants are merged into the `qualities` JSON array on the same row.
+- **Owner:** CLI Ingester (creates/updates); Web UI (reads, marks as read)
+
 ### FeedHealth
 - **Definition:** One row per configured feed tracking last success, last attempt, and error state. Used for downtime detection and alerting.
 - **Owner:** CLI Ingester (writes); Web UI (reads); Alerter (reads for threshold check)
@@ -57,6 +61,32 @@ class Movie(Base):
 
 ---
 
+### Series
+
+```python
+class Series(Base):
+    __tablename__ = "series"
+
+    id: int                          # PK, auto-increment
+    title: str                       # NOT NULL — normalized series name
+    imdb_id: str | None              # nullable — e.g. "tt0903747"; from RSS entry
+    season: int                      # NOT NULL
+    episode: int                     # NOT NULL
+    qualities: str                   # NOT NULL, JSON array: [{"quality": "720p", "torrent_page_url": "..."}]
+    feed_entry_date: datetime | None # publication date from RSS entry
+    ingested_at: datetime            # auto-set on insert
+    is_read: bool                    # default False
+    created_at: datetime             # auto-set on insert
+    updated_at: datetime             # auto-set on insert and update
+```
+
+**Indexes:**
+- `ix_series_title_season_episode` UNIQUE on `(title, season, episode)` — primary dedup key
+- `ix_series_title` on `title` — grouping queries
+- `ix_series_is_read` on `is_read`
+
+---
+
 ### FeedHealth
 
 ```python
@@ -75,7 +105,7 @@ class FeedHealth(Base):
 **Indexes:**
 - `ix_feed_health_feed_name` UNIQUE on `feed_name`
 
-One row per configured feed (movie feed + each news feed). Upserted by the Ingester on each run.
+One row per configured feed (movie feed + series feed + each news feed). Upserted by the Ingester on each run.
 
 ---
 
@@ -171,6 +201,17 @@ class AIFilteredView(Base):
 - **V-010:** If match found, merge `qualities` arrays (union of available qualities)
 - **V-011:** If no URL match but same `title` + `year`, treat as same movie — merge qualities
 
+### Series (on ingestion)
+- **V-021:** `title` MUST NOT be empty after normalization (stripping dots/underscores/dashes)
+- **V-022:** `season` MUST be a non-negative integer (0 allowed for specials)
+- **V-023:** `episode` MUST be a non-negative integer
+- **V-024:** `qualities` MUST be a valid JSON array of objects each with non-empty `quality` and `torrent_page_url` fields
+- **V-026:** `imdb_id`, if present, MUST match format `tt\d+`; store as-is, do not validate against external source
+- **V-027:** Entries where S##E## cannot be parsed from the title MUST be logged and skipped (not stored)
+
+### Series deduplication
+- **V-025:** On insert, check for existing record with same `(title, season, episode)`; if found, merge quality variants (union by `quality` value, preserving all `torrent_page_url` entries)
+
 ### NewsItem (on ingestion)
 - **V-012:** `title` MUST NOT be empty
 - **V-013:** `url` MUST be a non-empty string
@@ -200,6 +241,9 @@ database:
 feed:
   url: "https://yts.ag/rss"
   poll_interval_hours: 2
+
+series_feed:
+  url: "https://eztv.re/ezrss.xml"
 
 alerting:
   smtp_host: "localhost"
@@ -362,9 +406,11 @@ log: "Feed <name> import: received N rows, persisted P, discarded D" (NFR-006)
 
 **Movie feed:** `https://yts.ag/rss` — RSS 2.0 XML. Fields per `<item>`: `<title>`, `<link>`, `<pubDate>`, `<description>` (HTML blob with poster/genre/rating), `<enclosure>` (torrent URL). Parser extracts title/year/quality from `<title>` via regex; genre/IMDb/poster from `<description>` HTML.
 
+**Series feed:** `https://eztv.re/ezrss.xml` — RSS 2.0 XML. Fields per `<item>`: `<title>` (contains series name + SxxExx + quality, e.g. `Show.Name.S01E05.720p.WEB`), `<link>` (torrent page URL), `<pubDate>`, and an EZTV-specific `<torrent:magnetURI>` and `<imdb>` or similar element for the IMDb ID. Parser extracts series name/season/episode/quality via regex on `<title>`; torrent page URL from `<link>`; IMDb ID from feed-specific element. Exact structure requires live feed inspection before finalising parser (Q-009).
+
 **News feeds:** RSS 2.0 or Atom 1.0 (parsed via feedparser). Fields used: title, link, published/updated, summary/content. Format varies by feed — feedparser normalises differences.
 
-**Risk:** Both feed formats are uncontrolled and may change without notice. Parser must log warnings on unexpected structure and skip unparseable items rather than crashing.
+**Risk:** All feed formats are uncontrolled and may change without notice. Parser must log warnings on unexpected structure and skip unparseable items rather than crashing.
 
 ## 8) API Response Contracts (JSON)
 
@@ -432,6 +478,45 @@ Query params:
 
 On failure: same shape with all rating fields `null`, `imdb_id` `null`, and `enrichment_error` populated.
 
+### GET `/api/series`
+
+```json
+{
+  "series": [
+    {
+      "title": "Breaking Bad",
+      "imdb_id": "tt0903747",
+      "imdb_url": "https://www.imdb.com/title/tt0903747/",
+      "seasons": [
+        {
+          "season": 1,
+          "episodes": [
+            {
+              "id": 7,
+              "episode": 1,
+              "qualities": [
+                {"quality": "720p", "torrent_page_url": "https://eztv.re/ep/..."},
+                {"quality": "1080p", "torrent_page_url": "https://eztv.re/ep/..."}
+              ],
+              "feed_entry_date": "2026-06-19T10:00:00Z",
+              "is_read": false
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+`imdb_url` is omitted from the response when `imdb_id` is null.
+
+### POST `/api/series/{id}/read` and `/api/series/{id}/unread`
+
+```json
+{ "id": 7, "is_read": true }
+```
+
 ### GET `/api/health`
 
 ```json
@@ -441,6 +526,14 @@ On failure: same shape with all rating fields `null`, `imdb_id` `null`, and `enr
       "feed_name": "yts_movies",
       "last_success_at": "2026-06-16T14:00:00Z",
       "last_attempt_at": "2026-06-16T14:00:00Z",
+      "last_error": null,
+      "consecutive_failures": 0,
+      "status": "healthy"
+    },
+    {
+      "feed_name": "eztv_series",
+      "last_success_at": "2026-06-16T14:01:00Z",
+      "last_attempt_at": "2026-06-16T14:01:00Z",
       "last_error": null,
       "consecutive_failures": 0,
       "status": "healthy"
