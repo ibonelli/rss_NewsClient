@@ -129,7 +129,7 @@ body {
 /* Movie Grid */
 .movie-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(520px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(740px, 1fr));
     gap: 1.2rem;
 }
 
