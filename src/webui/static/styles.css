@@ -81,9 +81,20 @@ body {
 }
 
 .tab-count {
-    padding: 0.8rem 2rem;
     color: var(--text-secondary);
     font-size: 0.85rem;
+}
+
+.movies-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.8rem 2rem;
+}
+
+.view-toggle {
+    display: flex;
+    gap: 0.25rem;
 }
 
 .movie-count {
@@ -520,6 +531,16 @@ body {
 .btn-secondary:hover:not(:disabled) {
     background-color: #3a3a5a;
     color: var(--text-primary);
+}
+
+.btn-active {
+    background-color: var(--accent);
+    color: #fff;
+}
+
+.btn-active:hover {
+    background-color: var(--accent);
+    opacity: 0.9;
 }
 
 .btn-keep {

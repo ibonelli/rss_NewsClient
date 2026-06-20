@@ -7,7 +7,7 @@ import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.orm import Session
 
@@ -82,11 +82,13 @@ async def serve_index():
 async def get_movies(
     session: Session = Depends(_get_session),
     config: dict = Depends(_get_config),
+    filtered: bool = Query(default=True),
 ):
     movies = session.query(Movie).filter(Movie.is_read == False).all()
     movie_dicts = [_movie_to_dict(m) for m in movies]
-    filtered = filter_movies(movie_dicts, config)
-    sections = group_by_year(filtered, config)
+    if filtered:
+        movie_dicts = filter_movies(movie_dicts, config)
+    sections = group_by_year(movie_dicts, config)
     return {"sections": sections, "total_count": sum(len(s["movies"]) for s in sections)}
 
 

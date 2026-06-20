@@ -134,16 +134,23 @@ function MoviesTab() {
     const [totalCount, setTotalCount] = useState(0);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [isFiltered, setIsFiltered] = useState(true);
 
-    const fetchMovies = () => {
+    const fetchMovies = (filtered) => {
         setLoading(true);
-        fetch("/api/movies")
+        fetch(`/api/movies?filtered=${filtered}`)
             .then(r => r.json())
             .then(data => { setSections(data.sections); setTotalCount(data.total_count); setLoading(false); })
             .catch(() => { setError("Failed to load movies"); setLoading(false); });
     };
 
-    useEffect(fetchMovies, []);
+    useEffect(() => fetchMovies(isFiltered), []);
+
+    const handleToggleView = (filtered) => {
+        if (filtered === isFiltered) return;
+        setIsFiltered(filtered);
+        fetchMovies(filtered);
+    };
 
     const handleMarkRead = (movieId) => {
         setSections(prev =>
@@ -159,27 +166,36 @@ function MoviesTab() {
         );
     };
 
-    if (loading) return html`<div className="loading">Loading movies...</div>`;
     if (error) return html`<div className="error">${error}</div>`;
 
     return html`
         <div>
-            <div className="tab-count">${totalCount} movies</div>
-            ${sections.length === 0
-                ? html`<div className="empty-state">
-                    <p>No movies to display. Run the ingester first:</p>
-                    <code>python src/cli/main.py</code>
-                </div>`
-                : sections.map((section, i) => html`
-                    <section key=${i} className="year-section">
-                        <h2 className="year-header">${section.label}</h2>
-                        <div className="movie-grid">
-                            ${section.movies.map(movie => html`
-                                <${MovieCard} key=${movie.id} movie=${movie} onMarkRead=${handleMarkRead} onEnrich=${handleEnrich} />
-                            `)}
-                        </div>
-                    </section>
-                `)
+            <div className="movies-toolbar">
+                <div className="view-toggle">
+                    <button className=${`btn btn-sm ${isFiltered ? "btn-active" : "btn-secondary"}`}
+                        onClick=${() => handleToggleView(true)}>Filtered</button>
+                    <button className=${`btn btn-sm ${!isFiltered ? "btn-active" : "btn-secondary"}`}
+                        onClick=${() => handleToggleView(false)}>All</button>
+                </div>
+                <div className="tab-count">${totalCount} movies</div>
+            </div>
+            ${loading
+                ? html`<div className="loading">Loading movies...</div>`
+                : sections.length === 0
+                    ? html`<div className="empty-state">
+                        <p>No movies to display. Run the ingester first:</p>
+                        <code>python src/cli/main.py</code>
+                    </div>`
+                    : sections.map((section, i) => html`
+                        <section key=${i} className="year-section">
+                            <h2 className="year-header">${section.label}</h2>
+                            <div className="movie-grid">
+                                ${section.movies.map(movie => html`
+                                    <${MovieCard} key=${movie.id} movie=${movie} onMarkRead=${handleMarkRead} onEnrich=${handleEnrich} />
+                                `)}
+                            </div>
+                        </section>
+                    `)
             }
         </div>
     `;
