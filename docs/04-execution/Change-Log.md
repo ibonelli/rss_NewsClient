@@ -2,13 +2,13 @@
 
 ## Unreleased
 
-### Planned — M6: Series Feed
-- EZTV RSS ingestion (`https://eztv.re/ezrss.xml`) with S##E## parsing and quality variant grouping
+### Added — M6: Series Feed
+- EZTV RSS ingestion (`https://eztv.re/ezrss.xml`) with S##E## parsing; handles both space- and dot-separated title formats
 - `Series` DB table; deduplication merges quality variants by `title+season+episode`
-- `GET /api/series` grouped by title → season → episode; IMDb link per series title; torrent page link per quality variant
-- Read-tracking for series entries
-- Feed health + email alerting extended to EZTV feed
-- `config.yaml`: `series_feed.url` key
+- `GET /api/series` grouped by title → season → episode; IMDb search link per series title (EZTV feed has no IMDb ID); torrent page link per quality variant
+- Read-tracking for series entries (`POST /api/series/{id}/read`, `/unread`)
+- Feed health + email alerting extended to EZTV feed (`eztv_series`)
+- `config.yaml` / `config.yaml.example`: `series_feed.url` key
 
 ### Added — UI / Enrichment improvements
 - Movies tab: **Filtered / All toggle** — switches between rating-filtered view and full unread-movie list without page reload (`GET /api/movies?filtered=false`; FR-037)

@@ -1,4 +1,4 @@
-# ADR-010: Series IMDb link derived from feed-provided IMDb ID, no external lookup
+# ADR-010: Series IMDb link via title search URL; no IMDb ID in EZTV feed
 
 - **Status:** Accepted
 - **Date:** 2026-06-20
@@ -6,11 +6,11 @@
 
 ## Context
 
-The Series tab must display a link to the IMDb page for each series (FR-045). Two approaches exist: parse the IMDb ID from the EZTV RSS feed entry and construct the URL client-side, or perform an external lookup (e.g., TVDb, OMDb) at ingestion time to resolve the IMDb ID from the series title. EZTV RSS entries include an IMDb ID element per entry (exact field name subject to live inspection — Q-009, Q-011). Using this field avoids any external API call for series metadata, consistent with C-009.
+The Series tab must display a link to the IMDb page for each series (FR-045). The original assumption (pre-implementation) was that the EZTV RSS feed would include an IMDb ID element per entry. Live feed inspection (Q-009, Q-011) showed this is not the case — the EZTV feed provides no IMDb ID. The `series.imdb_id` column exists but is always null in practice. Three options remain: leave no link, construct an IMDb title-search URL from the series name, or perform an external lookup at ingestion time.
 
 ## Decision
 
-Store the IMDb ID parsed directly from the EZTV RSS feed entry into the `series.imdb_id` column. The Web UI constructs the IMDb URL as `https://www.imdb.com/title/{imdb_id}/` at render time. When `imdb_id` is null (absent from the feed entry), no link is shown.
+Construct an IMDb title-search URL from the series name at render time: `https://www.imdb.com/search/title/?title={title}&title_type=tv_series`. The `series.imdb_id` column is retained (nullable) in case a future feed source provides it. When `imdb_id` is present, the UI uses the direct URL `https://www.imdb.com/title/{imdb_id}/` instead.
 
 ## Consequences
 
@@ -20,17 +20,17 @@ Store the IMDb ID parsed directly from the EZTV RSS feed entry into the `series.
 - Implementation is simple: one field extracted, one URL template in the frontend
 
 ### Negative
-- IMDb ID accuracy depends entirely on EZTV — if their feed carries an incorrect or missing ID, the app has no fallback
-- No IMDb link for entries where the feed omits the IMDb ID (stored as null)
-- If EZTV changes the XML element name for the IMDb ID, the parser must be updated
+- Search URL lands on an IMDb results page, not a direct series page — one extra click for the user
+- If a series title is ambiguous, the search may not surface the right result first
+- `series.imdb_id` column is permanently null unless the feed or a future enrichment step populates it
 
 ## Alternatives considered
 
 | Option | Pros | Cons | Why rejected |
 |--------|------|------|--------------|
-| Look up IMDb ID via TVDb or OMDb at ingestion | Reliable ID even if EZTV omits it | Requires external API call; TVDb requires auth; OMDb free tier has rate limits; violates C-009 spirit | Rejected — adds complexity and potential cost for a marginal reliability gain |
-| Store full IMDb URL instead of ID | Slightly simpler frontend | URL is derivable from ID; storing redundant data | Rejected — storing the ID is cleaner and keeps the URL template in one place |
-| Search IMDb directly at render time | Always fresh | Requires scraping or paid API per page load; far too expensive | Rejected — not feasible |
+| No IMDb link at all | Simplest | Loses the feature entirely | Rejected — even a search URL is useful |
+| Look up IMDb ID via TVDb or OMDb at ingestion | Direct link, no ambiguity | External API call per series; TVDb requires auth; OMDb rate-limited; violates C-009 spirit | Rejected — adds complexity and potential cost |
+| Store full IMDb search URL instead of ID | Slightly simpler frontend | URL is derivable from title; storing redundant data | Rejected — constructing it at render time is cleaner |
 
 ## Links
 - Related requirements: FR-040, FR-045, C-009

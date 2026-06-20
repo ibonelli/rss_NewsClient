@@ -102,7 +102,7 @@ This script (idempotent — safe to re-run) applies:
 
 ---
 
-## M6 — Series Feed (planned — not yet implemented)
+## M6 — Series Feed
 
 ### Scope
 - `Series` DB table and SQLAlchemy model
@@ -133,10 +133,10 @@ This script (idempotent — safe to re-run) applies:
 - EZTV feed unreachable → update `feed_health`, do not crash; alert after 24h (FR-043, FR-047)
 - Season 0 / episode 0 entries (specials) → store as-is; valid per V-022/V-023
 
-### Known unknowns (resolve before implementing)
-- Q-009: Inspect live EZTV RSS XML to confirm field names (`<imdb>`, `<link>`, title format)
-- Q-010: Decide handling for non-SxxExx entries (current decision: skip and log)
-- Q-011: Confirm IMDb ID is per-entry in the feed (informs dedup merge strategy for `imdb_id`)
+### Feed inspection findings (Q-009, Q-010, Q-011 resolved)
+- **Q-009:** EZTV title format is `Show Name S##E## quality encoder` (space-separated) or `Show.Name.S##E##.quality` (dot-separated). Torrent page URL is in `<link>`. No IMDb ID element exists in the feed.
+- **Q-010:** Entries without S##E## pattern are logged and skipped (V-027). One skipped per ~30 entries observed in practice.
+- **Q-011:** EZTV does not provide an IMDb ID. `imdb_id` is always stored as null. The UI falls back to an IMDb title-search URL for every series entry.
 
 ### Migration steps
 - Fresh DB: `create_all()` on startup creates `series` table automatically

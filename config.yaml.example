@@ -5,6 +5,9 @@ database:
 feed:
   url: "https://yts.mx/rss"
 
+series_feed:
+  url: "https://eztv.re/ezrss.xml"
+
 alerting:
   smtp_host: "localhost"
   smtp_port: 25

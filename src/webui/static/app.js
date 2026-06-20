@@ -517,6 +517,86 @@ function NewsTab() {
 }
 
 // ---------------------------------------------------------------------------
+// Series tab
+// ---------------------------------------------------------------------------
+
+function SeriesTab() {
+    const [seriesList, setSeriesList] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+        fetch("/api/series")
+            .then(r => r.json())
+            .then(data => { setSeriesList(data.series || []); setLoading(false); })
+            .catch(() => { setError("Failed to load series"); setLoading(false); });
+    }, []);
+
+    const handleMarkRead = (episodeId) => {
+        fetch(`/api/series/${episodeId}/read`, { method: "POST" });
+        setSeriesList(prev =>
+            prev.map(s => ({
+                ...s,
+                seasons: s.seasons.map(season => ({
+                    ...season,
+                    episodes: season.episodes.filter(ep => ep.id !== episodeId),
+                })).filter(season => season.episodes.length > 0),
+            })).filter(s => s.seasons.length > 0)
+        );
+    };
+
+    if (loading) return html`<div className="loading">Loading series...</div>`;
+    if (error) return html`<div className="error">${error}</div>`;
+    if (seriesList.length === 0) return html`
+        <div className="empty-state">
+            <p>No series to display. Run the ingester first:</p>
+            <code>python src/cli/main.py</code>
+        </div>
+    `;
+
+    return html`
+        <div className="series-tab">
+            ${seriesList.map(series => {
+                const imdbHref = series.imdb_url ||
+                    `https://www.imdb.com/search/title/?title=${encodeURIComponent(series.title)}&title_type=tv_series`;
+                return html`
+                    <div key=${series.title} className="series-block">
+                        <h2 className="series-title">
+                            <a href=${imdbHref} target="_blank" rel="noreferrer">${series.title}</a>
+                        </h2>
+                        ${series.seasons.map(season => html`
+                            <div key=${season.season} className="season-block">
+                                <h3 className="season-header">Season ${season.season}</h3>
+                                <div className="episode-list">
+                                    ${season.episodes.map(ep => html`
+                                        <div key=${ep.id} className="episode-row">
+                                            <span className="episode-label">E${String(ep.episode).padStart(2, "0")}</span>
+                                            <div className="episode-qualities">
+                                                ${ep.qualities.map((q, i) => html`
+                                                    <a key=${i} href=${q.torrent_page_url} target="_blank" rel="noreferrer" className="quality-link">
+                                                        <${Badge} className="quality-badge">${q.quality}</${Badge}>
+                                                    </a>
+                                                `)}
+                                            </div>
+                                            ${ep.feed_entry_date && html`
+                                                <span className="episode-date">${new Date(ep.feed_entry_date).toLocaleDateString()}</span>
+                                            `}
+                                            <button className="btn btn-read btn-sm" onClick=${() => handleMarkRead(ep.id)}>
+                                                Mark Read
+                                            </button>
+                                        </div>
+                                    `)}
+                                </div>
+                            </div>
+                        `)}
+                    </div>
+                `;
+            })}
+        </div>
+    `;
+}
+
+// ---------------------------------------------------------------------------
 // Root app with tab navigation
 // ---------------------------------------------------------------------------
 
@@ -535,6 +615,12 @@ function App() {
                         Movies
                     </button>
                     <button
+                        className=${`tab-btn ${activeTab === "series" ? "active" : ""}`}
+                        onClick=${() => setActiveTab("series")}
+                    >
+                        Series
+                    </button>
+                    <button
                         className=${`tab-btn ${activeTab === "news" ? "active" : ""}`}
                         onClick=${() => setActiveTab("news")}
                     >
@@ -545,6 +631,7 @@ function App() {
             <${HealthBanner} />
             <main className="tab-content">
                 ${activeTab === "movies" && html`<${MoviesTab} />`}
+                ${activeTab === "series" && html`<${SeriesTab} />`}
                 ${activeTab === "news" && html`<${NewsTab} />`}
             </main>
         </div>

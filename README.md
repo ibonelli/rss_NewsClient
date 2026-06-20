@@ -68,3 +68,10 @@ Check the movies API directly: `http://127.0.0.1:8080/api/movies`
 
 If total_count is 0 there but the ingester logged insertions, the filtering rules are probably too strict (all movies have no ratings yet — they should pass through, but worth verifying).
 
+## APIs
+
+```
+http://127.0.0.1:8080/api/health
+http://127.0.0.1:8080/api/movies
+http://127.0.0.1:8080/api/series
+```

@@ -13,7 +13,7 @@ from html.parser import HTMLParser
 
 import feedparser
 
-__all__ = ["fetch_feed"]
+__all__ = ["fetch_feed", "fetch_series_feed"]
 
 logger = logging.getLogger(__name__)
 
@@ -178,6 +178,99 @@ def fetch_feed(feed_url: str) -> list[dict]:
 
     logger.info("Successfully parsed %d movies from feed", len(movies))
     return movies
+
+
+# Regex patterns for parsing EZTV RSS title format
+# Examples: "The Chi S07E08 720p WEB h264-DiRT", "Casualty S48E08 1080p HDTV H264-ORGANiC"
+_SERIES_TITLE_PATTERN = re.compile(r"^(.+?)[\s.]+[Ss](\d{1,3})[Ee](\d{1,3})\b")
+_SERIES_QUALITY_PATTERN = re.compile(r"\b(\d{3,4}p)\b", re.IGNORECASE)
+
+
+def _normalize_series_title(raw: str) -> str:
+    """Replace dots and underscores with spaces and strip."""
+    return re.sub(r"[._]", " ", raw).strip()
+
+
+def _parse_series_entry(entry: dict) -> dict | None:
+    """Parse a single EZTV feedparser entry into a series dict.
+
+    Returns None if the entry cannot be parsed or has no S##E## pattern (V-027).
+    """
+    raw_title = entry.get("title", "")
+    if not raw_title.strip():
+        logger.warning("Skipping series entry with empty title")
+        return None
+
+    match = _SERIES_TITLE_PATTERN.match(raw_title)
+    if not match:
+        logger.debug("Skipping series entry with no S##E## pattern: %s", raw_title)
+        return None
+
+    title = _normalize_series_title(match.group(1))
+    if not title:
+        logger.warning("Skipping series entry: empty title after normalization: %s", raw_title)
+        return None
+
+    season = int(match.group(2))
+    episode = int(match.group(3))
+
+    quality_match = _SERIES_QUALITY_PATTERN.search(raw_title)
+    quality = quality_match.group(1).lower() if quality_match else "unknown"
+
+    torrent_page_url = entry.get("link", "").strip()
+    if not torrent_page_url:
+        logger.warning("Skipping series entry with no link: %s", raw_title)
+        return None
+
+    published = entry.get("published_parsed")
+    feed_entry_date = None
+    if published:
+        try:
+            feed_entry_date = datetime(*published[:6])
+        except (TypeError, ValueError):
+            pass
+
+    return {
+        "title": title,
+        "season": season,
+        "episode": episode,
+        "quality": quality,
+        "torrent_page_url": torrent_page_url,
+        "imdb_id": None,  # Not provided by EZTV RSS feed
+        "feed_entry_date": feed_entry_date,
+    }
+
+
+def fetch_series_feed(feed_url: str) -> list[dict]:
+    """Fetch and parse the EZTV RSS series feed, returning a list of series entry dicts."""
+    logger.info("Fetching series feed from: %s", feed_url)
+
+    feed = feedparser.parse(feed_url)
+
+    if feed.bozo:
+        logger.warning("Series feed parsing had issues: %s", feed.bozo_exception)
+
+    if not feed.entries:
+        logger.warning("No entries found in series feed")
+        return []
+
+    logger.info("Found %d entries in series feed", len(feed.entries))
+
+    entries = []
+    skipped = 0
+    for entry in feed.entries:
+        try:
+            parsed = _parse_series_entry(entry)
+            if parsed:
+                entries.append(parsed)
+            else:
+                skipped += 1
+        except Exception as e:
+            logger.warning("Failed to parse series entry: %s — %s", entry.get("title", "?"), e)
+            skipped += 1
+
+    logger.info("Parsed %d series entries from feed (%d skipped)", len(entries), skipped)
+    return entries
 
 
 def fetch_news_feed(feed_name: str, feed_url: str) -> list[dict]:

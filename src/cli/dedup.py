@@ -12,9 +12,9 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from src.common.models import Movie
+from src.common.models import Movie, Series
 
-__all__ = ["deduplicate_and_store"]
+__all__ = ["deduplicate_and_store", "deduplicate_and_store_series"]
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +133,98 @@ def deduplicate_and_store(session: Session, movies: list[dict]) -> dict:
 
         except Exception as e:
             logger.error("Error processing movie '%s': %s", movie.get("title", "?"), e)
+            stats["skipped"] += 1
+
+    session.commit()
+    return stats
+
+
+def _merge_series_qualities(existing_json: str, new_variant: dict) -> str:
+    """Merge a new quality variant into the existing qualities JSON (union by quality name)."""
+    try:
+        existing = json.loads(existing_json)
+    except (json.JSONDecodeError, TypeError):
+        existing = []
+
+    known = {v["quality"] for v in existing if isinstance(v, dict) and "quality" in v}
+    if new_variant["quality"] not in known:
+        existing.append(new_variant)
+
+    return json.dumps(existing)
+
+
+def deduplicate_and_store_series(session: Session, entries: list[dict]) -> dict:
+    """Deduplicate and store series entries in the database.
+
+    For each entry:
+    - Check if (title, season, episode) already exists → merge quality variant (V-025)
+    - Else insert as new record
+
+    Args:
+        session: SQLAlchemy session.
+        entries: List of parsed series dicts from the fetcher.
+
+    Returns:
+        Stats dict: {"inserted": N, "merged": N, "skipped": N}
+    """
+    stats = {"inserted": 0, "merged": 0, "skipped": 0}
+
+    for entry in entries:
+        title = (entry.get("title") or "").strip()
+        season = entry.get("season")
+        episode = entry.get("episode")
+        quality = entry.get("quality", "unknown")
+        torrent_page_url = (entry.get("torrent_page_url") or "").strip()
+
+        if not title:  # V-021
+            logger.warning("V-021: Skipping series entry with empty title")
+            stats["skipped"] += 1
+            continue
+        if not isinstance(season, int) or season < 0:  # V-022
+            logger.warning("V-022: Skipping series entry with invalid season: %s", entry)
+            stats["skipped"] += 1
+            continue
+        if not isinstance(episode, int) or episode < 0:  # V-023
+            logger.warning("V-023: Skipping series entry with invalid episode: %s", entry)
+            stats["skipped"] += 1
+            continue
+        if not torrent_page_url:  # V-024
+            logger.warning("V-024: Skipping series entry with no torrent URL: %s", title)
+            stats["skipped"] += 1
+            continue
+
+        new_variant = {"quality": quality, "torrent_page_url": torrent_page_url}
+
+        try:
+            existing = (
+                session.query(Series)
+                .filter(Series.title == title, Series.season == season, Series.episode == episode)
+                .first()
+            )
+
+            if existing:
+                existing.qualities = _merge_series_qualities(existing.qualities, new_variant)
+                existing.updated_at = datetime.utcnow()
+                stats["merged"] += 1
+                logger.debug("Merged quality '%s' for '%s' S%02dE%02d", quality, title, season, episode)
+            else:
+                session.add(Series(
+                    title=title,
+                    imdb_id=entry.get("imdb_id"),
+                    season=season,
+                    episode=episode,
+                    qualities=json.dumps([new_variant]),
+                    feed_entry_date=entry.get("feed_entry_date"),
+                    ingested_at=datetime.utcnow(),
+                    is_read=False,
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow(),
+                ))
+                stats["inserted"] += 1
+                logger.debug("Inserted '%s' S%02dE%02d (%s)", title, season, episode, quality)
+
+        except Exception as e:
+            logger.error("Error processing series entry '%s' S%02dE%02d: %s", title, season, episode, e)
             stats["skipped"] += 1
 
     session.commit()

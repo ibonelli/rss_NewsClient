@@ -21,11 +21,12 @@ from sqlalchemy.orm import Session
 from src.common.config import load_config
 from src.common.db import get_engine, get_session_factory, init_db
 from src.common.models import NewsItem
-from src.cli.fetcher import fetch_feed, fetch_news_feed
-from src.cli.dedup import deduplicate_and_store
+from src.cli.fetcher import fetch_feed, fetch_series_feed, fetch_news_feed
+from src.cli.dedup import deduplicate_and_store, deduplicate_and_store_series
 from src.cli.alerter import update_feed_health, check_and_alert
 
 _MOVIE_FEED_NAME = "yts_movies"
+_SERIES_FEED_NAME = "eztv_series"
 
 
 def _store_news_items(session: Session, items: list[dict]) -> dict:
@@ -134,6 +135,32 @@ def main() -> None:
 
     with SessionFactory() as session:
         update_feed_health(session, _MOVIE_FEED_NAME, success=movie_success, error=movie_error)
+
+    # --- Series feed ---
+    series_feed_url = config.get("series_feed", {}).get("url", "")
+    if series_feed_url:
+        series_success = False
+        series_error = None
+        try:
+            series_entries = fetch_series_feed(series_feed_url)
+            series_success = True
+        except Exception as e:
+            series_error = str(e)
+            logger.error("Failed to fetch series feed: %s", e)
+            series_entries = []
+
+        if series_entries:
+            with SessionFactory() as session:
+                stats = deduplicate_and_store_series(session, series_entries)
+                logger.info(
+                    "Series: %d inserted, %d merged, %d skipped",
+                    stats["inserted"], stats["merged"], stats["skipped"],
+                )
+
+        with SessionFactory() as session:
+            update_feed_health(session, _SERIES_FEED_NAME, success=series_success, error=series_error)
+    else:
+        logger.info("No series feed URL configured — skipping series ingestion")
 
     # --- News feeds ---
     news_feeds = config.get("news_feeds", [])

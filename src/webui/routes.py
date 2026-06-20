@@ -11,7 +11,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.orm import Session
 
-from src.common.models import AIFilteredView, FeedHealth, Filter, Movie, NewsItem
+from collections import defaultdict
+
+from src.common.models import AIFilteredView, FeedHealth, Filter, Movie, NewsItem, Series
 from src.webui.filters import filter_movies, group_by_year
 from src.webui.enrichment import enrich_movie
 
@@ -149,6 +151,76 @@ async def enrich(
         "enrichment_date": movie.enrichment_date.isoformat() if movie.enrichment_date else None,
         "enrichment_error": movie.enrichment_error,
     }
+
+
+# ---------------------------------------------------------------------------
+# Series
+# ---------------------------------------------------------------------------
+
+@router.get("/api/series")
+async def get_series(session: Session = Depends(_get_session)):
+    entries = (
+        session.query(Series)
+        .filter(Series.is_read == False)
+        .order_by(Series.title, Series.season, Series.episode)
+        .all()
+    )
+
+    by_title: dict[str, dict[int, list[Series]]] = defaultdict(lambda: defaultdict(list))
+    for e in entries:
+        by_title[e.title][e.season].append(e)
+
+    result = []
+    for title in sorted(by_title.keys()):
+        seasons_map = by_title[title]
+        imdb_id = next(
+            (ep.imdb_id for eps in seasons_map.values() for ep in eps if ep.imdb_id),
+            None,
+        )
+        seasons = [
+            {
+                "season": season_num,
+                "episodes": [
+                    {
+                        "id": ep.id,
+                        "episode": ep.episode,
+                        "qualities": json.loads(ep.qualities) if ep.qualities else [],
+                        "feed_entry_date": ep.feed_entry_date.isoformat() if ep.feed_entry_date else None,
+                        "is_read": ep.is_read,
+                    }
+                    for ep in sorted(seasons_map[season_num], key=lambda e: e.episode)
+                ],
+            }
+            for season_num in sorted(seasons_map.keys())
+        ]
+        series_dict: dict = {"title": title, "imdb_id": imdb_id, "seasons": seasons}
+        if imdb_id:
+            series_dict["imdb_url"] = f"https://www.imdb.com/title/{imdb_id}/"
+        result.append(series_dict)
+
+    return {"series": result}
+
+
+@router.post("/api/series/{series_id}/read")
+async def mark_series_read(series_id: int, session: Session = Depends(_get_session)):
+    entry = session.query(Series).filter(Series.id == series_id).first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Series entry not found")
+    entry.is_read = True
+    entry.updated_at = datetime.utcnow()
+    session.commit()
+    return {"id": entry.id, "is_read": True}
+
+
+@router.post("/api/series/{series_id}/unread")
+async def mark_series_unread(series_id: int, session: Session = Depends(_get_session)):
+    entry = session.query(Series).filter(Series.id == series_id).first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Series entry not found")
+    entry.is_read = False
+    entry.updated_at = datetime.utcnow()
+    session.commit()
+    return {"id": entry.id, "is_read": False}
 
 
 # ---------------------------------------------------------------------------
