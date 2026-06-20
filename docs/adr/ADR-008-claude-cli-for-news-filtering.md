@@ -1,6 +1,6 @@
 # ADR-008: Claude CLI for AI-filtered news processing
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR-009
 - **Date:** 2026-06-15
 - **Owners:** Ignacio Bonelli
 
