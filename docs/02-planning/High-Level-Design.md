@@ -8,12 +8,19 @@
 
 ```
 ┌─────────────────┐    ┌─────────────────────────────┐
-│  YTS RSS Feed   │───▶│   CLI Ingester (cron)        │──▶ movies
+│  YTS RSS Feed   │───▶│   CLI Ingester (cron step 1) │──▶ movies
 └─────────────────┘    │                              │──▶ news_items
-┌─────────────────┐    │   fetches all feeds;         │──▶ feed_health
-│  News RSS/Atom  │───▶│   regex matching inline      │──▶ matched_filter
+┌─────────────────┐    │                              │──▶ feed_health
+│  News RSS/Atom  │───▶│                              │
 │  Feeds (n)      │    └──────────────┬───────────────┘
-└─────────────────┘                   │
+└─────────────────┘         (cron step 2, after ingester)
+                                      ▼
+                       ┌──────────────────────────────┐
+                       │  CLI Filter Processor         │──▶ news_items.matched_filter_id
+                       │  (cron step 2, regex only)    │
+                       │  flags matches; never deletes │
+                       └──────────────┬───────────────┘
+                                      │
                             ┌─────────┴─────────┐
                             │     Database      │
                             │  (SQLite/MySQL)   │
@@ -51,8 +58,9 @@
 
 | Component | Responsibility | Process |
 |---|---|---|
-| **CLI Ingester** | Fetch all RSS/Atom feeds (movie + news), parse, deduplicate (movies), store raw data, apply regex matching for `filtered` feeds, check feed health | Process 1 (cron) |
-| **FastAPI Web UI** | Serve filtered movie view, news tab with filtered/AI-filtered/raw sub-views, read-tracking, on-demand movie enrichment, AI-filtered export (`GET`) and import (`POST`) endpoints | Process 2 (long-running) |
+| **CLI Ingester** | Fetch all RSS/Atom feeds (movie + news), parse, deduplicate (movies), store raw data, check feed health | Process 1 (cron step 1) |
+| **CLI Filter Processor** | Sync `filters` table from config; for each `filtered` feed, regex-match unprocessed `news_items` and set `matched_filter_id` on matches — never deletes rows | Process 2 (cron step 2, after Ingester) |
+| **FastAPI Web UI** | Serve filtered movie view, news tab with filtered/AI-filtered/raw sub-views, read-tracking, on-demand movie enrichment, AI-filtered export (`GET`) and import (`POST`) endpoints | Process 3 (long-running) |
 | **Database (SQLite/MySQL)** | Persistent storage for all data | Shared resource |
 | **Config file** | Feed definitions, filter rules, rating thresholds | Shared resource |
 | **External AI Tool** | Consumes export JSON; produces import JSON; operated entirely outside this application | External (user-operated) |
@@ -66,21 +74,24 @@
 4. Feed health timestamp recorded per feed
 5. Alert check: if last success >24h ago, send email via SMTP
 
-**News pipeline (runs in same cron invocation, after movies):**
+**News pipeline (runs in same cron invocation as movies):**
 6. Ingester fetches each configured news feed (RSS/Atom)
 7. All items stored to `news_items` regardless of feed type
-8. For `filtered` feeds: regex matching runs inline; `matched_filter_id` written on matches
-9. Feed health recorded per news feed
+8. Feed health recorded per news feed
+
+**Filter Processor (cron step 2, immediately after Ingester):**
+9. Syncs `filters` table from config (upsert by feed_name + name)
+10. For each `filtered` feed: regex-matches `news_items` against `filters` table; sets `matched_filter_id` FK on matches. Items that do not match are left with `matched_filter_id = null` — they remain in the DB but are hidden from the filtered UI view. No rows are deleted.
 
 **Web UI (on-demand):**
-10. User opens browser; FastAPI reads DB, applies config-based movie filters, renders grouped/sorted view
-11. User marks movies or news as read → DB toggle
-12. User triggers movie enrichment → on-demand OMDb/TMDb API call
+12. User opens browser; FastAPI reads DB, applies config-based movie filters, renders grouped/sorted view
+13. User marks movies or news as read → DB toggle
+14. User triggers movie enrichment → on-demand OMDb/TMDb API call
 
 **AI-filtered export/import (user-triggered via browser):**
-13. User clicks Export in News tab → `GET /api/news/{feed}/export` → JSON download with two sections: `unread_items` (news_items where is_read = false) and `context_items` (ai_filtered_views where keep_as_context = true)
-14. User runs exported JSON through external AI tool (outside the app)
-15. User uploads result via News tab → `POST /api/news/{feed}/import` → all existing `ai_filtered_views` for that feed are deleted and replaced with imported rows; each row carries `source_item_id` FK referencing its originating `news_items` row
+15. User clicks Export in News tab → `GET /api/news/{feed}/export` → JSON download with two sections: `unread_items` (news_items where is_read = false) and `context_items` (ai_filtered_views where keep_as_context = true)
+16. User runs exported JSON through external AI tool (outside the app)
+17. User uploads result via News tab → `POST /api/news/{feed}/import` → all existing `ai_filtered_views` for that feed are deleted and replaced with imported rows; each row carries `source_item_id` FK referencing its originating `news_items` row
 
 ### Database Schema (Conceptual)
 

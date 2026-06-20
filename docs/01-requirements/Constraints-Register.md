@@ -6,7 +6,7 @@ List constraints that are non-negotiable. This is a primary AI context document.
 ## Constraints
 - **C-001 (Language):** MUST use Python.
 - **C-002 (Database):** MUST support MySQL (primary) and SQLite (fallback) via SQLAlchemy abstraction. MySQL is the default when a server is available.
-- **C-003 (Architecture):** MUST have two separate processes: (1) CLI scheduler/ingester (cron-triggered), (2) FastAPI web application for viewing and tracking.
+- **C-003 (Architecture):** MUST have three separate processes: (1) CLI Ingester (cron-triggered), (2) CLI Filter Processor (cron-triggered, runs after Ingester), (3) FastAPI web application for viewing and tracking.
 - **C-004 (Cost):** MUST NOT use paid APIs for movie rating enrichment.
 - **C-005 (Email):** MUST use local SMTP for alerting.
 - **C-006 (UI):** MUST serve a web-based UI via FastAPI for viewing and tracking both movies and news.

@@ -16,15 +16,11 @@
 
 ### Filter
 - **Definition:** A named regex pattern associated with a specific filtered feed. Synced from config on each Filter Processor run.
-- **Owner:** CLI Filter Processor (syncs from config); Web UI (reads for display)
-
-### Category
-- **Definition:** A normalized free-form category label assigned by Claude CLI. New values are upserted by the Filter Processor as they appear in Claude output.
-- **Owner:** CLI Filter Processor (creates); Web UI (reads for display and grouping)
+- **Owner:** CLI Filter Processor (syncs from config, applies regex); Web UI (reads for display)
 
 ### AIFilteredView
-- **Definition:** The AI-processed result for a news item that Claude chose to surface. One row per news item Claude returned. Absence means the item was not returned (filtered out or not yet processed).
-- **Owner:** CLI Filter Processor (creates/updates); Web UI (reads, marks as read, sets keep_as_context)
+- **Definition:** An AI-processed result for a news item, imported by the user after external processing. One row per surfaced news item. The full set for a feed is replaced on each import. Absence means the item has not been surfaced by any import yet.
+- **Owner:** Web UI (creates/replaces on import; reads; marks as read; sets keep_as_context)
 
 ## 2) Schema (SQLAlchemy Models)
 
@@ -123,24 +119,7 @@ class Filter(Base):
 **Indexes:**
 - `ix_filters_feed_name_name` UNIQUE on `(feed_name, name)` — sync upsert key
 
-Synced from config on each Filter Processor run. Rows not present in config are left (not deleted) to preserve FK references from `news_items`.
-
----
-
-### Category
-
-```python
-class Category(Base):
-    __tablename__ = "categories"
-
-    id: int      # PK, auto-increment
-    name: str    # NOT NULL, UNIQUE — free-form label assigned by Claude e.g. "Security Vulnerability"
-```
-
-**Indexes:**
-- `ix_categories_name` UNIQUE on `name`
-
-Upserted by the Filter Processor when a new category string appears in Claude output. Never deleted.
+Synced from config on each Filter Processor run. Rows not present in config are left in place (not deleted) to preserve FK references from `news_items` that were previously matched.
 
 ---
 
@@ -151,21 +130,26 @@ class AIFilteredView(Base):
     __tablename__ = "ai_filtered_views"
 
     id: int                       # PK, auto-increment
-    news_item_id: int             # NOT NULL, FK → news_items.id
+    source_item_id: int           # NOT NULL, FK → news_items.id
     feed_name: str                # NOT NULL — denormalized for query convenience
-    category_id: int | None       # FK → categories.id, nullable
+    title: str                    # NOT NULL — denormalized from import payload
+    url: str                      # NOT NULL — denormalized from import payload
+    published_at: datetime | None # nullable — from import payload
+    category: str | None          # free-form label assigned by external AI, nullable
     summary: str | None           # 1–2 sentence AI-generated summary, nullable
     tags: str | None              # JSON array as text e.g. '["CVE","patch"]', nullable
-    is_read: bool                 # default False — user-controlled
-    keep_as_context: bool         # default False — user-controlled; if True, item is included as context in future Claude CLI calls
-    last_filtered_at: datetime    # when this row was last written by the Filter Processor
+    is_read: bool                 # default False — user-controlled; NOT reset on import
+    keep_as_context: bool         # default False — user-controlled; if True, included in next export
+    ingested_at: datetime         # when this row was written by the import
 ```
 
 **Indexes:**
-- `ix_ai_filtered_views_news_item_id` UNIQUE on `news_item_id` — one row per news item
+- `ix_ai_filtered_views_source_item_id` UNIQUE on `source_item_id` — one row per news item
 - `ix_ai_filtered_views_feed_name` on `feed_name`
 - `ix_ai_filtered_views_is_read` on `is_read`
-- `ix_ai_filtered_views_keep_as_context` on `keep_as_context` — Filter Processor context query
+- `ix_ai_filtered_views_keep_as_context` on `keep_as_context` — export context query
+
+**Import behaviour:** On `POST /api/news/{feed}/import`, all existing rows for that feed are deleted and replaced with the payload rows. `is_read` and `keep_as_context` are NOT preserved from deleted rows — they reset to `false` on each import. (The export captures `keep_as_context` items before replacement so the external tool can re-include them.)
 
 ## 3) Validation Rules
 
@@ -192,12 +176,12 @@ class AIFilteredView(Base):
 - **V-014:** `feed_name` MUST match a configured feed name in config
 - **V-015:** Duplicate `(url, feed_name)` MUST be skipped (idempotent ingestion)
 
-### AIFilteredView (on Filter Processor upsert)
-- **V-016:** `id` in Claude output MUST match a `news_items.id` from the input batch; discard if not found
-- **V-017:** `category` string MUST be non-empty (1–50 chars); skip item if blank
+### AIFilteredView (on import)
+- **V-016:** `source_item_id` in import payload MUST match a `news_items.id` belonging to the target feed; discard row if not found
+- **V-017:** `category` string, if present, MUST be non-empty (1–50 chars); skip row if blank
 - **V-018:** `summary` MUST be a non-empty string if present
-- **V-019:** `tags` MUST be a valid JSON array of non-empty strings
-- **V-020:** On upsert, MUST NOT overwrite `is_read` or `keep_as_context` — these are user-controlled fields
+- **V-019:** `tags` MUST be a valid JSON array of non-empty strings if present
+- **V-020:** `title` and `url` MUST be non-empty strings; reject entire import if any row is missing them
 
 ## 4) Compatibility Rules
 
@@ -273,120 +257,105 @@ news_feeds:
   - name: "AI News"
     url: "https://example.com/ai/feed"
     type: ai_filtered
-    claude_prompt: |
-      You are filtering a news feed for relevance to AI research and engineering.
-      Return only items worth reading, with a category, one-sentence summary, and tags.
-      Respond as a JSON array matching the required schema.
-    claude_timeout_seconds: 60
 
 webapp:
   host: "127.0.0.1"
   port: 8080
 ```
 
-## 6) Claude CLI JSON Contract (Q-005)
+## 6) Export / Import JSON Contract (FR-033, FR-034)
 
-### Invocation
+### Export — `GET /api/news/{feed_name}/export`
 
-```bash
-echo "$prompt" | claude --print
-```
-
-The Filter Processor assembles `$prompt` as a single text string and pipes it to Claude CLI in non-interactive print mode. Claude's stdout is the JSON response.
-
-### Prompt envelope (assembled by Filter Processor)
-
-```
-<claude_prompt from config.yaml — feed-specific instructions>
-
-Evaluate the news items below. Return ONLY a JSON array of items worth surfacing.
-Do not include context items in your output. Items you omit will not appear in the filtered view.
-Respond with valid JSON only — no markdown, no explanation.
-
-=== PENDING ITEMS (evaluate these) ===
-<JSON array — see input schema below>
-
-=== CONTEXT ITEMS (reference only — do not include in output) ===
-<JSON array of keep_as_context items, or [] if none>
-```
-
-### Input — pending items (sent to Claude)
+Returns a JSON file download. The external AI tool reads this file, processes it, and produces the import payload.
 
 ```json
-[
-  {
-    "id": 517,
-    "title": "Critical OpenSSL CVE patched in 3.4.1",
-    "url": "https://openssl.org/news/...",
-    "published_at": "2026-06-14T09:00:00Z",
-    "content": "Full article text — not truncated."
-  }
-]
+{
+  "feed_name": "AI News",
+  "exported_at": "2026-06-19T10:00:00Z",
+  "unread_items": [
+    {
+      "id": 517,
+      "title": "Critical OpenSSL CVE patched in 3.4.1",
+      "url": "https://openssl.org/news/...",
+      "published_at": "2026-06-14T09:00:00Z",
+      "content": "Full article text — not truncated."
+    }
+  ],
+  "context_items": [
+    {
+      "source_item_id": 412,
+      "title": "Log4Shell follow-up: affected projects list updated",
+      "url": "https://example.com/log4shell-update",
+      "published_at": "2026-06-10T08:00:00Z",
+      "category": "Security",
+      "summary": "The affected projects list for Log4Shell was updated with 12 new entries.",
+      "tags": ["Log4Shell", "CVE", "Java"]
+    }
+  ]
+}
 ```
 
-### Input — context items (reference only, no output expected)
+**`unread_items`** — `news_items` rows where `is_read = false` for this feed. Fields: `id`, `title`, `url`, `published_at`, `content`. The `id` is the `news_items.id` that the import must reference as `source_item_id`.
 
-Items from `ai_filtered_views` where `keep_as_context = true`. These are included so Claude has prior context, but the Filter Processor does not expect Claude to return them.
+**`context_items`** — `ai_filtered_views` rows where `keep_as_context = true` for this feed. Included for the external tool to use as context/examples; the tool is not expected to return them in its output.
+
+Log: `"Feed <name> export: N unread items, M context items"` (NFR-006).
+
+---
+
+### Import — `POST /api/news/{feed_name}/import`
+
+The external AI tool produces this payload. The user uploads it via the web UI.
 
 ```json
-[
-  {
-    "id": 412,
-    "title": "Log4Shell follow-up: affected projects list updated",
-    "category": "Security",
-    "summary": "The affected projects list for Log4Shell was updated with 12 new entries.",
-    "tags": ["Log4Shell", "CVE", "Java"]
-  }
-]
+{
+  "views": [
+    {
+      "source_item_id": 517,
+      "title": "Critical OpenSSL CVE patched in 3.4.1",
+      "url": "https://openssl.org/news/...",
+      "published_at": "2026-06-14T09:00:00Z",
+      "category": "Security Vulnerability",
+      "summary": "A critical OpenSSL CVE was patched in 3.4.1; all users should upgrade immediately.",
+      "tags": ["CVE", "OpenSSL", "patch"]
+    }
+  ]
+}
 ```
 
-### Output — Claude's response
-
-A JSON array of items Claude chooses to surface. Items absent from the array are silently excluded from `ai_filtered_views` (or existing rows are left unchanged if previously surfaced).
-
-```json
-[
-  {
-    "id": 517,
-    "category": "Security Vulnerability",
-    "summary": "A critical OpenSSL CVE was patched in 3.4.1; all users should upgrade immediately.",
-    "tags": ["CVE", "OpenSSL", "patch"]
-  }
-]
-```
-
-**Output field contract:**
+**Import field contract:**
 
 | Field | Type | Rules |
 |---|---|---|
-| `id` | int | MUST match a pending item ID; discard row if not found (V-016) |
-| `category` | string | Free-form, 1–50 chars (V-017); upserted into `categories` table |
-| `summary` | string | 1–2 sentences (V-018) |
-| `tags` | string[] | 1–5 non-empty strings (V-019) |
+| `source_item_id` | int | MUST match a `news_items.id` for this feed (V-016); discard row if not found |
+| `title` | string | MUST be non-empty (V-020) |
+| `url` | string | MUST be non-empty (V-020) |
+| `published_at` | string (ISO 8601) | nullable |
+| `category` | string | Optional; 1–50 chars if present (V-017) |
+| `summary` | string | Optional; non-empty if present (V-018) |
+| `tags` | string[] | Optional; array of non-empty strings if present (V-019) |
 
-`keep_as_context` is NOT returned by Claude — it is set by the user via the web UI.
-
-### Filter Processor upsert flow
+**Import flow:**
 
 ```
-for each item in Claude output:
-  1. Validate id exists in input batch — discard if not (V-016)
-  2. Validate required fields — skip item and log warning on failure (V-017–V-019)
-  3. get-or-create Category(name=item["category"]) → category_id
-  4. upsert ai_filtered_views(news_item_id=id, category_id=..., summary=..., tags=..., last_filtered_at=now())
-     — do NOT overwrite is_read or keep_as_context on existing rows (V-020)
+1. Validate feed exists and is ai_filtered type — 404 if not
+2. Validate payload is valid JSON with a "views" array — 400 if not
+3. For each row: validate source_item_id, title, url — discard invalid rows and log (V-016, V-020)
+4. DELETE all existing ai_filtered_views rows for this feed
+5. INSERT valid rows with ingested_at = now(); is_read = false; keep_as_context = false
+6. Return: { "imported": N, "discarded": M }
 
-log: "Feed <name>: sent N items, received M items" (NFR-006)
+log: "Feed <name> import: received N rows, persisted P, discarded D" (NFR-006)
 ```
 
-### Error handling
+**Error handling:**
 
-| Failure | Behavior |
+| Failure | HTTP response |
 |---|---|
-| Claude CLI not found / auth error | Log error, skip AI pass for this feed, continue |
-| Timeout (`claude_timeout_seconds` exceeded) | Log timeout, skip AI pass for this feed, continue |
-| stdout is not valid JSON | Log error with raw output excerpt, skip AI pass for this feed |
-| Individual item fails validation | Log warning, skip that item, continue processing remaining items |
+| Feed not found or not `ai_filtered` type | `404 Not Found` |
+| Payload is not valid JSON | `400 Bad Request` |
+| Individual row fails validation (V-016, V-020) | Row discarded, logged; remainder processed; `200` with discard count |
 
 ## 7) RSS Feed Contract (External — Not Controlled)
 
@@ -510,7 +479,7 @@ Returns items appropriate to the feed type:
   "items": [
     {
       "id": 88,
-      "news_item_id": 517,
+      "source_item_id": 517,
       "title": "Critical OpenSSL CVE patched in 3.4.1",
       "url": "https://openssl.org/news/...",
       "published_at": "2026-06-14T09:00:00Z",
@@ -519,7 +488,7 @@ Returns items appropriate to the feed type:
       "tags": ["CVE", "OpenSSL", "patch"],
       "is_read": false,
       "keep_as_context": false,
-      "last_filtered_at": "2026-06-16T12:00:00Z"
+      "ingested_at": "2026-06-19T10:05:00Z"
     }
   ]
 }
@@ -569,6 +538,18 @@ Only valid for `ai_filtered` feeds (FR-032). Returns the raw `news_items` rows s
 ```json
 { "id": 88, "keep_as_context": true }
 ```
+
+### GET `/api/news/{feed_name}/export`
+
+Returns `Content-Disposition: attachment; filename="<feed_name>-export.json"`. Shape documented in Section 6.
+
+### POST `/api/news/{feed_name}/import`
+
+```json
+{ "imported": 12, "discarded": 1 }
+```
+
+On error: `400` with `{ "detail": "..." }`.
 
 ### Error Responses (All Endpoints)
 

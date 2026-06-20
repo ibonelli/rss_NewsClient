@@ -8,7 +8,7 @@
 - Scheduled polling (~2 hours via system cron) for all feeds
 - SQLite/MySQL database for persistent storage (dual-backend)
 - Rating enrichment from free sources (IMDb, RT expert, RT audience)
-- CLI Ingester handles regex matching for `filtered` feeds inline
+- CLI Filter Processor — regex-matches `news_items` for `filtered` feeds; flags matches via `matched_filter_id`; never deletes rows
 - FastAPI web application for filtered movie browsing and news reading
 - Configurable genre-specific filtering rules (config file)
 - Config-driven news feed and filter definitions synced to `filters` table
@@ -31,7 +31,7 @@
 | M2 — Enrichment | Movies are enriched with IMDb + RT ratings from free sources. Failures handled gracefully. | Self |
 | M3 — Web Application (Movies) | FastAPI app serves filtered, grouped movie view. Read-tracking works. | Self |
 | M4 — Alerting + Polish | Email alerts on feed downtime >24h. Config-driven filtering is tunable. | Self |
-| M5 — News Feeds | CLI Ingester fetches news feeds and applies regex matching inline. News tab in web UI with read tracking, AI-filtered sub-views, and export/import workflow for AI-filtered feeds. | Self |
+| M5 — News Feeds | CLI Ingester fetches news feeds. CLI Filter Processor flags matching items via regex. News tab in web UI with read tracking, AI-filtered sub-views, and export/import workflow for AI-filtered feeds. | Self |
 
 ## 3) Work Breakdown (Epics → Stories)
 
@@ -66,7 +66,7 @@
 - **Story 5.1:** Extend config schema for news feed definitions with `type` field; sync `filters` table at filter processor startup (FR-019, C-007)
 - **Story 5.2:** CLI Ingester — fetch news RSS/Atom feeds, store all items to `news_items` (FR-020, FR-021, FR-026)
 - **Story 5.3:** CLI Filter Processor — regex pass: match items against `filters` table, write `matched_filter_id` FK (FR-022)
-- ~~**Story 5.4:** Removed — Claude CLI AI pass no longer applicable (see ADR-009).~~
+- ~~**Story 5.4:** Removed — Claude CLI AI pass replaced by export/import (see ADR-009).~~
 - **Story 5.4a:** Web UI — `GET /api/news/{feed}/export` endpoint: returns unread `news_items` + `keep_as_context` `ai_filtered_views` as a JSON download (FR-033, NFR-006)
 - **Story 5.4b:** Web UI — `POST /api/news/{feed}/import` endpoint: replace `ai_filtered_views` for the feed with imported rows; persist `source_item_id` FK (FR-034)
 - **Story 5.4c:** News tab UI — Export download button and file-upload import control for `ai_filtered` feeds (FR-035, FR-036)
