@@ -437,7 +437,34 @@ body {
 }
 
 .ai-feed-toolbar {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
     margin-bottom: 1rem;
+}
+
+.btn-disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.import-result {
+    padding: 0.5rem 0.75rem;
+    border-radius: 4px;
+    margin-bottom: 0.75rem;
+    font-size: 0.875rem;
+}
+
+.import-ok {
+    background-color: rgba(46, 204, 113, 0.15);
+    border: 1px solid var(--green);
+    color: var(--green);
+}
+
+.import-error {
+    background-color: rgba(233, 69, 96, 0.15);
+    border: 1px solid var(--accent);
+    color: var(--accent);
 }
 
 /* Additional badges */

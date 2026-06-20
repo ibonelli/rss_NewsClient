@@ -46,7 +46,10 @@ genre_priority:
   - documentary
 
 webapp:
+  # Only local access
   host: "127.0.0.1"
+  # External access is permitted
+  #host: "0.0.0.0"
   port: 8080
 
 # News feeds — remove this section if you don't need news ingestion.
@@ -68,9 +71,4 @@ news_feeds:
   - name: "AI News"
     url: "https://example.com/ai/feed"
     type: ai_filtered
-    claude_prompt: |
-      You are filtering a news feed for relevance to AI research and engineering.
-      Return only items worth reading, with a category, one-sentence summary, and tags.
-      Respond as a JSON array — each item must have: id (integer), category (string),
-      summary (string), tags (array of strings).
-    claude_timeout_seconds: 60
+    # No extra config needed — use the web UI Export/Import workflow (ADR-009)

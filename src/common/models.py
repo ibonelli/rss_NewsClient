@@ -5,11 +5,11 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import (
-    Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text
+    Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-__all__ = ["Base", "Movie", "FeedHealth", "NewsItem", "Filter", "Category", "AIFilteredView"]
+__all__ = ["Base", "Movie", "FeedHealth", "NewsItem", "Filter", "AIFilteredView"]
 
 
 class Base(DeclarativeBase):
@@ -99,35 +99,26 @@ class Filter(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
 
-class Category(Base):
-    """Normalized free-form category label assigned by Claude CLI."""
-
-    __tablename__ = "categories"
-    __table_args__ = (
-        Index("ix_categories_name", "name", unique=True),
-    )
-
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
-
-
 class AIFilteredView(Base):
-    """AI-processed result for a news item Claude chose to surface."""
+    """An AI-processed news item imported via the export/import workflow."""
 
     __tablename__ = "ai_filtered_views"
     __table_args__ = (
-        Index("ix_ai_filtered_views_news_item_id", "news_item_id", unique=True),
+        Index("ix_ai_filtered_views_source_item_id", "source_item_id", unique=True),
         Index("ix_ai_filtered_views_feed_name", "feed_name"),
         Index("ix_ai_filtered_views_is_read", "is_read"),
         Index("ix_ai_filtered_views_keep_as_context", "keep_as_context"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    news_item_id: Mapped[int] = mapped_column(Integer, ForeignKey("news_items.id"), nullable=False)
+    source_item_id: Mapped[int] = mapped_column(Integer, ForeignKey("news_items.id"), nullable=False)
     feed_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    category_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("categories.id"), nullable=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    url: Mapped[str] = mapped_column(String(2000), nullable=False)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    category: Mapped[str | None] = mapped_column(String(255), nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     tags: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array as text
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     keep_as_context: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    last_filtered_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    ingested_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)

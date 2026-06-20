@@ -330,6 +330,8 @@ function AIFilteredFeedView({ feedName }) {
     const [showRaw, setShowRaw] = useState(false);
     const [rawItems, setRawItems] = useState([]);
     const [rawLoading, setRawLoading] = useState(false);
+    const [importing, setImporting] = useState(false);
+    const [importResult, setImportResult] = useState(null);
 
     useEffect(() => {
         fetch(`/api/news/${encodeURIComponent(feedName)}/items`)
@@ -357,6 +359,36 @@ function AIFilteredFeedView({ feedName }) {
         setItems(prev => prev.map(item => item.id === id ? { ...item, keep_as_context: keepAsContext } : item));
     };
 
+    const handleExport = () => {
+        window.location.href = `/api/news/${encodeURIComponent(feedName)}/export`;
+    };
+
+    const handleImport = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        setImporting(true);
+        setImportResult(null);
+        try {
+            const text = await file.text();
+            const payload = JSON.parse(text);
+            const res = await fetch(`/api/news/${encodeURIComponent(feedName)}/import`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || "Import failed");
+            setImportResult({ ok: true, message: `Imported ${data.imported} items${data.discarded ? `, ${data.discarded} discarded` : ""}.` });
+            // Reload items
+            const updated = await fetch(`/api/news/${encodeURIComponent(feedName)}/items`).then(r => r.json());
+            setItems(updated.items || []);
+        } catch (err) {
+            setImportResult({ ok: false, message: err.message });
+        }
+        setImporting(false);
+        e.target.value = "";
+    };
+
     if (loading) return html`<div className="loading">Loading...</div>`;
 
     const rawView = showRaw
@@ -376,7 +408,7 @@ function AIFilteredFeedView({ feedName }) {
                     `)}
                 </div>`)
         : (items.length === 0
-            ? html`<div className="empty-state">No AI-filtered items yet. Run the filter processor first: <code>python src/cli/filter.py</code></div>`
+            ? html`<div className="empty-state">No AI-filtered items yet. Export unread items, process externally, then import the result.</div>`
             : html`<div className="news-list">
                 ${items.map(item => html`<${AIViewRow} key=${item.id} item=${item} onToggleRead=${handleToggleRead} onToggleKeep=${handleToggleKeep} />`)}
             </div>`);
@@ -384,10 +416,22 @@ function AIFilteredFeedView({ feedName }) {
     return html`
         <div>
             <div className="ai-feed-toolbar">
+                <button className="btn btn-secondary btn-sm" onClick=${handleExport}>
+                    Export Unread
+                </button>
+                <label className=${`btn btn-secondary btn-sm ${importing ? "btn-disabled" : ""}`}>
+                    ${importing ? "Importing…" : "Import Results"}
+                    <input type="file" accept=".json" style=${{ display: "none" }} onChange=${handleImport} disabled=${importing} />
+                </label>
                 <button className="btn btn-secondary btn-sm" onClick=${handleShowRaw}>
                     ${showRaw ? "Hide Raw Items" : "Show Raw Items"}
                 </button>
             </div>
+            ${importResult && html`
+                <div className=${`import-result ${importResult.ok ? "import-ok" : "import-error"}`}>
+                    ${importResult.message}
+                </div>
+            `}
             ${rawView}
         </div>
     `;
