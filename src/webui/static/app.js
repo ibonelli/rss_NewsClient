@@ -25,6 +25,63 @@ function Badge({ children, className = "" }) {
 }
 
 // ---------------------------------------------------------------------------
+// Shared news toolbar — export / import / mark-all-read
+// ---------------------------------------------------------------------------
+
+function FeedToolbar({ feedName, onMarkAllRead, markingAll, onImportDone }) {
+    const [importing, setImporting] = useState(false);
+    const [importResult, setImportResult] = useState(null);
+
+    const handleExport = () => {
+        window.location.href = `/api/news/${encodeURIComponent(feedName)}/export`;
+    };
+
+    const handleImport = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        setImporting(true);
+        setImportResult(null);
+        try {
+            const text = await file.text();
+            const payload = JSON.parse(text);
+            const res = await fetch(`/api/news/${encodeURIComponent(feedName)}/import`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || "Import failed");
+            setImportResult({ ok: true, message: `Imported ${data.imported} items${data.discarded ? `, ${data.discarded} discarded` : ""}.` });
+            if (onImportDone) onImportDone();
+        } catch (err) {
+            setImportResult({ ok: false, message: err.message });
+        }
+        setImporting(false);
+        e.target.value = "";
+    };
+
+    return html`
+        <div>
+            <div className="ai-feed-toolbar">
+                <button className="btn btn-secondary btn-sm" onClick=${handleExport}>Export Unread</button>
+                <label className=${`btn btn-secondary btn-sm ${importing ? "btn-disabled" : ""}`}>
+                    ${importing ? "Importing…" : "Import Results"}
+                    <input type="file" accept=".json" style=${{ display: "none" }} onChange=${handleImport} disabled=${importing} />
+                </label>
+                <button className="btn btn-secondary btn-sm" onClick=${onMarkAllRead} disabled=${markingAll}>
+                    ${markingAll ? "..." : "Mark All Read"}
+                </button>
+            </div>
+            ${importResult && html`
+                <div className=${`import-result ${importResult.ok ? "import-ok" : "import-error"}`}>
+                    ${importResult.message}
+                </div>
+            `}
+        </div>
+    `;
+}
+
+// ---------------------------------------------------------------------------
 // Health banner — shows status for all feeds
 // ---------------------------------------------------------------------------
 
@@ -135,6 +192,7 @@ function MoviesTab() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [isFiltered, setIsFiltered] = useState(true);
+    const [markingAll, setMarkingAll] = useState(false);
 
     const fetchMovies = (filtered) => {
         setLoading(true);
@@ -160,6 +218,18 @@ function MoviesTab() {
         setTotalCount(prev => prev - 1);
     };
 
+    const handleMarkAllRead = async () => {
+        setMarkingAll(true);
+        try {
+            await fetch("/api/movies/read-all", { method: "POST" });
+            setSections([]);
+            setTotalCount(0);
+        } catch (e) {
+            console.error("Failed to mark all as read:", e);
+        }
+        setMarkingAll(false);
+    };
+
     const handleEnrich = (movieId, enrichData) => {
         setSections(prev =>
             prev.map(s => ({ ...s, movies: s.movies.map(m => m.id === movieId ? { ...m, ...enrichData } : m) }))
@@ -178,6 +248,9 @@ function MoviesTab() {
                         onClick=${() => handleToggleView(false)}>All</button>
                 </div>
                 <div className="tab-count">${totalCount} movies</div>
+                <button className="btn btn-secondary btn-sm" onClick=${handleMarkAllRead} disabled=${markingAll}>
+                    ${markingAll ? "..." : "Mark All Read"}
+                </button>
             </div>
             ${loading
                 ? html`<div className="loading">Loading movies...</div>`
@@ -300,24 +373,44 @@ function AIViewRow({ item, onToggleRead, onToggleKeep }) {
 function UnfilteredFeedView({ feedName }) {
     const [items, setItems] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [markingAll, setMarkingAll] = useState(false);
 
-    useEffect(() => {
+    const loadItems = () => {
+        setLoading(true);
         fetch(`/api/news/${encodeURIComponent(feedName)}/items`)
             .then(r => r.json())
             .then(data => { setItems(data.items || []); setLoading(false); })
             .catch(() => setLoading(false));
-    }, [feedName]);
+    };
+
+    useEffect(() => { loadItems(); }, [feedName]);
 
     const handleToggleRead = (id, isRead) => {
         setItems(prev => prev.map(item => item.id === id ? { ...item, is_read: isRead } : item));
     };
 
+    const handleMarkAllRead = async () => {
+        setMarkingAll(true);
+        try {
+            await fetch(`/api/news/${encodeURIComponent(feedName)}/read-all`, { method: "POST" });
+            setItems(prev => prev.map(item => ({ ...item, is_read: true })));
+        } catch (e) {
+            console.error("Failed to mark all as read:", e);
+        }
+        setMarkingAll(false);
+    };
+
     if (loading) return html`<div className="loading">Loading...</div>`;
-    if (items.length === 0) return html`<div className="empty-state">No items yet.</div>`;
 
     return html`
-        <div className="news-list">
-            ${items.map(item => html`<${NewsItemRow} key=${item.id} item=${item} onToggleRead=${handleToggleRead} />`)}
+        <div>
+            <${FeedToolbar} feedName=${feedName} onMarkAllRead=${handleMarkAllRead} markingAll=${markingAll} onImportDone=${loadItems} />
+            ${items.length === 0
+                ? html`<div className="empty-state">No items yet.</div>`
+                : html`<div className="news-list">
+                    ${items.map(item => html`<${NewsItemRow} key=${item.id} item=${item} onToggleRead=${handleToggleRead} />`)}
+                </div>`
+            }
         </div>
     `;
 }
@@ -325,24 +418,44 @@ function UnfilteredFeedView({ feedName }) {
 function FilteredFeedView({ feedName }) {
     const [items, setItems] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [markingAll, setMarkingAll] = useState(false);
 
-    useEffect(() => {
+    const loadItems = () => {
+        setLoading(true);
         fetch(`/api/news/${encodeURIComponent(feedName)}/items`)
             .then(r => r.json())
             .then(data => { setItems(data.items || []); setLoading(false); })
             .catch(() => setLoading(false));
-    }, [feedName]);
+    };
+
+    useEffect(() => { loadItems(); }, [feedName]);
 
     const handleToggleRead = (id, isRead) => {
         setItems(prev => prev.map(item => item.id === id ? { ...item, is_read: isRead } : item));
     };
 
+    const handleMarkAllRead = async () => {
+        setMarkingAll(true);
+        try {
+            await fetch(`/api/news/${encodeURIComponent(feedName)}/read-all`, { method: "POST" });
+            setItems(prev => prev.map(item => ({ ...item, is_read: true })));
+        } catch (e) {
+            console.error("Failed to mark all as read:", e);
+        }
+        setMarkingAll(false);
+    };
+
     if (loading) return html`<div className="loading">Loading...</div>`;
-    if (items.length === 0) return html`<div className="empty-state">No matched items yet.</div>`;
 
     return html`
-        <div className="news-list">
-            ${items.map(item => html`<${NewsItemRow} key=${item.id} item=${item} onToggleRead=${handleToggleRead} />`)}
+        <div>
+            <${FeedToolbar} feedName=${feedName} onMarkAllRead=${handleMarkAllRead} markingAll=${markingAll} onImportDone=${loadItems} />
+            ${items.length === 0
+                ? html`<div className="empty-state">No matched items yet.</div>`
+                : html`<div className="news-list">
+                    ${items.map(item => html`<${NewsItemRow} key=${item.id} item=${item} onToggleRead=${handleToggleRead} />`)}
+                </div>`
+            }
         </div>
     `;
 }
@@ -353,15 +466,16 @@ function AIFilteredFeedView({ feedName }) {
     const [showRaw, setShowRaw] = useState(false);
     const [rawItems, setRawItems] = useState([]);
     const [rawLoading, setRawLoading] = useState(false);
-    const [importing, setImporting] = useState(false);
-    const [importResult, setImportResult] = useState(null);
+    const [markingAll, setMarkingAll] = useState(false);
 
-    useEffect(() => {
+    const loadItems = () => {
         fetch(`/api/news/${encodeURIComponent(feedName)}/items`)
             .then(r => r.json())
             .then(data => { setItems(data.items || []); setLoading(false); })
             .catch(() => setLoading(false));
-    }, [feedName]);
+    };
+
+    useEffect(() => { loadItems(); }, [feedName]);
 
     const handleShowRaw = () => {
         if (!showRaw && rawItems.length === 0) {
@@ -382,34 +496,15 @@ function AIFilteredFeedView({ feedName }) {
         setItems(prev => prev.map(item => item.id === id ? { ...item, keep_as_context: keepAsContext } : item));
     };
 
-    const handleExport = () => {
-        window.location.href = `/api/news/${encodeURIComponent(feedName)}/export`;
-    };
-
-    const handleImport = async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        setImporting(true);
-        setImportResult(null);
+    const handleMarkAllRead = async () => {
+        setMarkingAll(true);
         try {
-            const text = await file.text();
-            const payload = JSON.parse(text);
-            const res = await fetch(`/api/news/${encodeURIComponent(feedName)}/import`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload),
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.detail || "Import failed");
-            setImportResult({ ok: true, message: `Imported ${data.imported} items${data.discarded ? `, ${data.discarded} discarded` : ""}.` });
-            // Reload items
-            const updated = await fetch(`/api/news/${encodeURIComponent(feedName)}/items`).then(r => r.json());
-            setItems(updated.items || []);
-        } catch (err) {
-            setImportResult({ ok: false, message: err.message });
+            await fetch(`/api/news/${encodeURIComponent(feedName)}/read-all`, { method: "POST" });
+            setItems(prev => prev.map(item => ({ ...item, is_read: true })));
+        } catch (e) {
+            console.error("Failed to mark all as read:", e);
         }
-        setImporting(false);
-        e.target.value = "";
+        setMarkingAll(false);
     };
 
     if (loading) return html`<div className="loading">Loading...</div>`;
@@ -438,23 +533,12 @@ function AIFilteredFeedView({ feedName }) {
 
     return html`
         <div>
+            <${FeedToolbar} feedName=${feedName} onMarkAllRead=${handleMarkAllRead} markingAll=${markingAll} onImportDone=${loadItems} />
             <div className="ai-feed-toolbar">
-                <button className="btn btn-secondary btn-sm" onClick=${handleExport}>
-                    Export Unread
-                </button>
-                <label className=${`btn btn-secondary btn-sm ${importing ? "btn-disabled" : ""}`}>
-                    ${importing ? "Importing…" : "Import Results"}
-                    <input type="file" accept=".json" style=${{ display: "none" }} onChange=${handleImport} disabled=${importing} />
-                </label>
                 <button className="btn btn-secondary btn-sm" onClick=${handleShowRaw}>
                     ${showRaw ? "Hide Raw Items" : "Show Raw Items"}
                 </button>
             </div>
-            ${importResult && html`
-                <div className=${`import-result ${importResult.ok ? "import-ok" : "import-error"}`}>
-                    ${importResult.message}
-                </div>
-            `}
             ${rawView}
         </div>
     `;
@@ -524,6 +608,7 @@ function SeriesTab() {
     const [seriesList, setSeriesList] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [markingAll, setMarkingAll] = useState(false);
 
     useEffect(() => {
         fetch("/api/series")
@@ -545,6 +630,17 @@ function SeriesTab() {
         );
     };
 
+    const handleMarkAllRead = async () => {
+        setMarkingAll(true);
+        try {
+            await fetch("/api/series/read-all", { method: "POST" });
+            setSeriesList([]);
+        } catch (e) {
+            console.error("Failed to mark all as read:", e);
+        }
+        setMarkingAll(false);
+    };
+
     if (loading) return html`<div className="loading">Loading series...</div>`;
     if (error) return html`<div className="error">${error}</div>`;
     if (seriesList.length === 0) return html`
@@ -556,6 +652,12 @@ function SeriesTab() {
 
     return html`
         <div className="series-tab">
+            <div className="movies-toolbar">
+                <div className="tab-count">${seriesList.length} series</div>
+                <button className="btn btn-secondary btn-sm" onClick=${handleMarkAllRead} disabled=${markingAll}>
+                    ${markingAll ? "..." : "Mark All Read"}
+                </button>
+            </div>
             ${seriesList.map(series => {
                 const imdbHref = series.imdb_url ||
                     `https://www.imdb.com/search/title/?title=${encodeURIComponent(series.title)}&title_type=tv_series`;

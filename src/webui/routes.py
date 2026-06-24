@@ -223,6 +223,24 @@ async def mark_series_unread(series_id: int, session: Session = Depends(_get_ses
     return {"id": entry.id, "is_read": False}
 
 
+@router.post("/api/movies/read-all")
+async def mark_all_movies_read(session: Session = Depends(_get_session)):
+    count = session.query(Movie).filter(Movie.is_read == False).update(
+        {"is_read": True, "updated_at": datetime.utcnow()}, synchronize_session=False
+    )
+    session.commit()
+    return {"marked_read": count}
+
+
+@router.post("/api/series/read-all")
+async def mark_all_series_read(session: Session = Depends(_get_session)):
+    count = session.query(Series).filter(Series.is_read == False).update(
+        {"is_read": True, "updated_at": datetime.utcnow()}, synchronize_session=False
+    )
+    session.commit()
+    return {"marked_read": count}
+
+
 # ---------------------------------------------------------------------------
 # Health
 # ---------------------------------------------------------------------------
@@ -389,9 +407,6 @@ async def get_news_raw(
     feed_cfg = next((f for f in news_feeds if f.get("name") == feed_name), None)
     if feed_cfg is None:
         raise HTTPException(status_code=404, detail="Feed not found")
-    if feed_cfg.get("type") != "ai_filtered":
-        raise HTTPException(status_code=400, detail="Raw view only available for ai_filtered feeds")
-
     # Gather which source_item_ids have an ai_filtered_views row
     view_ids = {
         row.source_item_id
@@ -484,6 +499,23 @@ async def keep_ai_view(view_id: int, session: Session = Depends(_get_session)):
     return {"id": view.id, "keep_as_context": True}
 
 
+@router.post("/api/news/{feed_name}/read-all")
+async def mark_all_news_read(
+    feed_name: str,
+    session: Session = Depends(_get_session),
+    config: dict = Depends(_get_config),
+):
+    _get_news_feed_cfg(feed_name, config)
+    session.query(NewsItem).filter(
+        NewsItem.feed_name == feed_name, NewsItem.is_read == False
+    ).update({"is_read": True}, synchronize_session=False)
+    session.query(AIFilteredView).filter(
+        AIFilteredView.feed_name == feed_name, AIFilteredView.is_read == False
+    ).update({"is_read": True}, synchronize_session=False)
+    session.commit()
+    return {"ok": True}
+
+
 @router.post("/api/news/views/{view_id}/unkeep")
 async def unkeep_ai_view(view_id: int, session: Session = Depends(_get_session)):
     view = _get_ai_view(session, view_id)
@@ -496,13 +528,11 @@ async def unkeep_ai_view(view_id: int, session: Session = Depends(_get_session))
 # AI-filtered export / import (FR-033, FR-034)
 # ---------------------------------------------------------------------------
 
-def _get_ai_filtered_feed(feed_name: str, config: dict) -> dict:
+def _get_news_feed_cfg(feed_name: str, config: dict) -> dict:
     news_feeds = config.get("news_feeds", [])
     feed_cfg = next((f for f in news_feeds if f.get("name") == feed_name), None)
     if feed_cfg is None:
         raise HTTPException(status_code=404, detail="Feed not found")
-    if feed_cfg.get("type") != "ai_filtered":
-        raise HTTPException(status_code=400, detail="Export/import only available for ai_filtered feeds")
     return feed_cfg
 
 
@@ -513,7 +543,7 @@ async def export_feed(
     config: dict = Depends(_get_config),
 ):
     """Return unread news_items + keep_as_context ai_filtered_views as a JSON download."""
-    _get_ai_filtered_feed(feed_name, config)
+    _get_news_feed_cfg(feed_name, config)
 
     unread_rows = (
         session.query(NewsItem)
@@ -574,7 +604,7 @@ async def import_feed(
     config: dict = Depends(_get_config),
 ):
     """Replace all ai_filtered_views for the feed with the imported payload."""
-    _get_ai_filtered_feed(feed_name, config)
+    _get_news_feed_cfg(feed_name, config)
 
     try:
         body = await request.json()
