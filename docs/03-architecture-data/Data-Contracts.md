@@ -384,7 +384,7 @@ The external AI tool produces this payload. The user uploads it via the web UI.
 **Import flow:**
 
 ```
-1. Validate feed exists and is ai_filtered type — 404 if not
+1. Validate feed exists in config — 404 if not
 2. Validate payload is valid JSON with a "views" array — 400 if not
 3. For each row: validate source_item_id, title, url — discard invalid rows and log (V-016, V-020)
 4. DELETE all existing ai_filtered_views rows for this feed
@@ -398,7 +398,7 @@ log: "Feed <name> import: received N rows, persisted P, discarded D" (NFR-006)
 
 | Failure | HTTP response |
 |---|---|
-| Feed not found or not `ai_filtered` type | `404 Not Found` |
+| Feed not found in config | `404 Not Found` |
 | Payload is not valid JSON | `400 Bad Request` |
 | Individual row fails validation (V-016, V-020) | Row discarded, logged; remainder processed; `200` with discard count |
 
@@ -406,7 +406,7 @@ log: "Feed <name> import: received N rows, persisted P, discarded D" (NFR-006)
 
 **Movie feed:** `https://yts.ag/rss` — RSS 2.0 XML. Fields per `<item>`: `<title>`, `<link>`, `<pubDate>`, `<description>` (HTML blob with poster/genre/rating), `<enclosure>` (torrent URL). Parser extracts title/year/quality from `<title>` via regex; genre/IMDb/poster from `<description>` HTML.
 
-**Series feed:** `https://eztv.re/ezrss.xml` — RSS 2.0 XML. Fields per `<item>`: `<title>` (contains series name + SxxExx + quality, e.g. `Show.Name.S01E05.720p.WEB`), `<link>` (torrent page URL), `<pubDate>`, and an EZTV-specific `<torrent:magnetURI>` and `<imdb>` or similar element for the IMDb ID. Parser extracts series name/season/episode/quality via regex on `<title>`; torrent page URL from `<link>`; IMDb ID from feed-specific element. Exact structure requires live feed inspection before finalising parser (Q-009).
+**Series feed:** `https://eztv.re/ezrss.xml` — RSS 2.0 XML. Fields per `<item>`: `<title>` (series name + S##E## + quality, e.g. `Show Name S01E05 720p WEB` or `Show.Name.S01E05.720p.WEB`), `<link>` (torrent page URL), `<pubDate>`. No IMDb ID element is present in the feed — `series.imdb_id` is always stored as null; the UI falls back to an IMDb title-search URL (see ADR-010). Parser extracts series name/season/episode/quality via regex on `<title>`; torrent page URL from `<link>`. Entries with no S##E## pattern are skipped (V-027).
 
 **News feeds:** RSS 2.0 or Atom 1.0 (parsed via feedparser). Fields used: title, link, published/updated, summary/content. Format varies by feed — feedparser normalises differences.
 
@@ -459,6 +459,14 @@ Query params:
 
 ```json
 { "id": 42, "title": "Movie Name", "is_read": true, "updated_at": "2026-05-20T16:00:00Z" }
+```
+
+### POST `/api/movies/read-all`
+
+Marks all unread movies as read. Returns the count marked.
+
+```json
+{ "marked_read": 30 }
 ```
 
 ### POST `/api/movies/{id}/enrich`
@@ -515,6 +523,14 @@ On failure: same shape with all rating fields `null`, `imdb_id` `null`, and `enr
 
 ```json
 { "id": 7, "is_read": true }
+```
+
+### POST `/api/series/read-all`
+
+Marks all unread series episodes as read. Returns the count marked.
+
+```json
+{ "marked_read": 22 }
 ```
 
 ### GET `/api/health`
@@ -597,7 +613,7 @@ For `filtered` type, each item also includes `matched_filter_name: "vulnerabilit
 
 ### GET `/api/news/{feed_name}/raw`
 
-Only valid for `ai_filtered` feeds (FR-032). Returns the raw `news_items` rows so the user can browse unprocessed items.
+Available for any news feed. Returns the raw `news_items` rows so the user can browse unprocessed items alongside any AI-filtered results. For feeds with no imported `ai_filtered_views`, all items will have `has_ai_view: false`.
 
 ```json
 {
@@ -638,11 +654,21 @@ Only valid for `ai_filtered` feeds (FR-032). Returns the raw `news_items` rows s
 { "id": 88, "keep_as_context": true }
 ```
 
+### POST `/api/news/{feed_name}/read-all`
+
+Marks all `news_items` and `ai_filtered_views` for the feed as read. Available for any feed type.
+
+```json
+{ "ok": true }
+```
+
 ### GET `/api/news/{feed_name}/export`
 
-Returns `Content-Disposition: attachment; filename="<feed_name>-export.json"`. Shape documented in Section 6.
+Available for any news feed type (not restricted to `ai_filtered`). Returns `Content-Disposition: attachment; filename="<feed_name>-export.json"`. Shape documented in Section 6.
 
 ### POST `/api/news/{feed_name}/import`
+
+Available for any news feed type. Replaces all `ai_filtered_views` for the feed with the payload rows.
 
 ```json
 { "imported": 12, "discarded": 1 }

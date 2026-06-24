@@ -65,6 +65,7 @@ All milestones M1–M5 are implemented and running in production.
 
 ## Known limitations
 - No bulk enrichment — user must click per-movie "Refresh Ratings"
+- Export/import is available for all news feed types; the `ai_filtered` type gate was removed
 - In-browser JSX transform via Babel CDN adds ~1s to initial page load
 - CDN-loaded React requires internet on first visit (cached after)
 - No Alembic migrations — schema changes require `migrate_001_schema.sh` or manual `ALTER TABLE`
@@ -123,7 +124,7 @@ This script (idempotent — safe to re-run) applies:
 - `config.yaml` / `config.yaml.example` — add `series_feed.url`
 
 ### Key decisions
-- ADR-010: IMDb ID parsed from feed; URL constructed at render time; null → no link
+- ADR-010: IMDb ID not in EZTV feed; UI uses IMDb title-search URL as fallback; `imdb_id` always null
 - ADR-011: Quality variants as JSON array `[{"quality": "...", "torrent_page_url": "..."}]` on the series row
 
 ### Edge cases to handle

@@ -1,7 +1,7 @@
 # Requirements — pelis-feed
 
 ## 1) Goal
-- The system shall automatically ingest movie data from the YTS RSS feed and news from configurable RSS/Atom news feeds, provide on-demand rating enrichment for movies, and serve a filterable, read-tracked web-based view grouped appropriately for each content type. For AI-assisted news feeds, the system exposes a JSON export/import workflow so an external tool can classify items without any direct AI integration inside the application.
+- The system shall automatically ingest movie data from the YTS RSS feed and news from configurable RSS/Atom news feeds, provide on-demand rating enrichment for movies, and serve a filterable, read-tracked web-based view grouped appropriately for each content type. All news feeds expose a JSON export/import workflow so an external tool can classify items without any direct AI integration inside the application.
 - The system shall also ingest TV series episode data from the EZTV RSS feed, parse season/episode identifiers, group quality variants, and serve a browsable Series tab with the same read-tracking pattern as movies.
 
 ## 2) Personas / Users
@@ -27,7 +27,7 @@
 - **FR-020:** News feeds MUST be fetched on the same ~2h cron cycle as the movie feed.
 - **FR-021:** Unfiltered news feeds MUST store all fetched items without filtering.
 - **FR-022:** Filtered news feeds MUST store ALL fetched items. Items matching the configured regex MUST have the matching filter identifier recorded in a dedicated `matched_filter` field; non-matching items have this field null.
-- **FR-023:** AI-filtered news feeds MUST store all fetched items in `news_items`. The application MUST NOT invoke any AI tool directly; AI classification is handled externally via the export/import workflow (see FR-033–FR-036).
+- **FR-023:** AI-filtered news feeds MUST store all fetched items in `news_items`. The application MUST NOT invoke any AI tool directly; AI classification is handled externally via the export/import workflow (see FR-033–FR-036), which is available for all news feed types.
 - ~~**FR-024:** Removed — Claude CLI prompt configuration is no longer applicable.~~
 - **FR-025:** Feed health tracking MUST extend to all news feeds, recording last successful fetch per feed.
 
@@ -63,15 +63,20 @@
 - **FR-031:** For AI-filtered feeds, the News tab MUST display items from the `ai_filtered_views` table, showing category, summary, and tags. Read/unread tracking for AI-filtered feeds MUST be applied to `ai_filtered_views` rows.
 - **FR-032:** For AI-filtered feeds, the News tab MUST also provide a sub-view displaying the full raw `news_items` for that feed, allowing the user to browse unprocessed items alongside the AI-filtered view.
 
-### AI-filtered Export / Import
-- **FR-033:** The web application MUST expose `GET /api/news/{feed}/export` for `ai_filtered` feeds, returning a downloadable JSON file with two sections: `unread_items` (all `news_items` rows for that feed where `is_read = false`) and `context_items` (all `ai_filtered_views` rows for that feed where `keep_as_context = true`). Each item in `unread_items` MUST include its `news_items.id` so the import can reference it.
-- **FR-034:** The web application MUST expose `POST /api/news/{feed}/import` for `ai_filtered` feeds, accepting a JSON payload in the `ai_filtered_views` format (title, URL, publication date, category, summary, tags, and `source_item_id` referencing the originating `news_items.id`). On import, ALL existing `ai_filtered_views` rows for that feed MUST be deleted and replaced with the imported rows.
-- **FR-035:** The News tab MUST provide a UI button on `ai_filtered` feed views that triggers `FR-033` and downloads the resulting JSON file to the user's browser.
-- **FR-036:** The News tab MUST provide a UI file-upload control on `ai_filtered` feed views that submits a local JSON file to `FR-034` and refreshes the view on success.
+### Export / Import (All News Feeds)
+- **FR-033:** The web application MUST expose `GET /api/news/{feed}/export` for any configured news feed, returning a downloadable JSON file with two sections: `unread_items` (all `news_items` rows for that feed where `is_read = false`) and `context_items` (all `ai_filtered_views` rows for that feed where `keep_as_context = true`). Each item in `unread_items` MUST include its `news_items.id` so the import can reference it.
+- **FR-034:** The web application MUST expose `POST /api/news/{feed}/import` for any configured news feed, accepting a JSON payload in the `ai_filtered_views` format (title, URL, publication date, category, summary, tags, and `source_item_id` referencing the originating `news_items.id`). On import, ALL existing `ai_filtered_views` rows for that feed MUST be deleted and replaced with the imported rows.
+- **FR-035:** The News tab MUST provide Export and Import UI controls on every news feed view (regardless of type).
+- **FR-036:** The Import control MUST submit a local JSON file to `FR-034` and refresh the view on success.
 
 ### Web Application — Movie View Controls
 - **FR-037:** The movie view MUST provide a Filtered / All toggle that switches between the rating-filtered view and the complete unread-movie list without a page reload.
 - **FR-038:** IMDb and RT rating badges MUST be clickable links. For enriched movies (where `imdb_id` is known), the IMDb badge MUST link directly to `https://www.imdb.com/title/{imdb_id}/`. When `imdb_id` is not yet known, the badge MUST fall back to an IMDb title-search URL. RT badges MUST link to a Rotten Tomatoes search for the movie title. Badges with no rating (N/A) MUST NOT be links.
+
+### Mark All as Read
+- **FR-048:** The Movies tab MUST provide a "Mark All Read" button that marks every currently listed unread movie as read and removes them from the view in a single action.
+- **FR-049:** The Series tab MUST provide a "Mark All Read" button that marks every unread series episode as read and removes them from the view in a single action.
+- **FR-050:** Every news feed view MUST provide a "Mark All Read" button that marks all `news_items` (and any `ai_filtered_views`) for that feed as read in a single action.
 
 ### Read Tracking
 - **FR-017:** The web application MUST provide a UI mechanism (button/toggle) to mark movies as "already read/seen" so they are excluded from the view.
@@ -110,7 +115,7 @@
 - **AC-006:** Movies have enriched ratings from at least one external source.
 - **AC-007:** Unfiltered news feeds store all fetched items; read/unread status survives app restart.
 - **AC-008:** Filtered news feeds store all items; only items with a non-null `matched_filter` appear in the News tab, with the filter name displayed.
-- **AC-009:** For an `ai_filtered` feed, clicking Export downloads a JSON file containing unread `news_items` rows (with IDs) and `keep_as_context` `ai_filtered_views` rows. Uploading a valid import JSON replaces `ai_filtered_views` for that feed, and the results appear immediately in the News tab.
+- **AC-009:** For any news feed, clicking Export downloads a JSON file containing unread `news_items` rows (with IDs) and `keep_as_context` `ai_filtered_views` rows. Uploading a valid import JSON replaces `ai_filtered_views` for that feed, and the results appear immediately in the News tab.
 - **AC-010:** The web UI News tab is accessible and displays news items independently of the Movies tab.
 - **AC-011:** For AI-filtered feeds, both the AI-filtered sub-view and the raw unprocessed sub-view are accessible in the News tab.
 - **AC-012:** After import, each `ai_filtered_views` row carries a `source_item_id` that correctly references its originating `news_items` row.

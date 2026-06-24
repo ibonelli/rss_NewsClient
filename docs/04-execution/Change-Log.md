@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Changed — Export/Import universalised; Mark All Read added
+- Export (`GET /api/news/{feed}/export`) and Import (`POST /api/news/{feed}/import`) now available for **all** news feed types, not just `ai_filtered`; `_get_ai_filtered_feed` type gate removed; raw endpoint (`GET /api/news/{feed}/raw`) similarly unrestricted
+- `FeedToolbar` component (Export / Import Results / Mark All Read) now renders on every news feed view
+- `POST /api/movies/read-all` — marks all unread movies as read; Movies tab toolbar gains "Mark All Read" button
+- `POST /api/series/read-all` — marks all unread episodes as read; Series tab gains toolbar with count and "Mark All Read" button
+- `POST /api/news/{feed}/read-all` — marks all `news_items` and `ai_filtered_views` for the feed as read
+
 ### Added — M6: Series Feed
 - EZTV RSS ingestion (`https://eztv.re/ezrss.xml`) with S##E## parsing; handles both space- and dot-separated title formats
 - `Series` DB table; deduplication merges quality variants by `title+season+episode`
