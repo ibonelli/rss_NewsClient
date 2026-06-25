@@ -2,13 +2,15 @@
 
 ## Scope implemented
 
-All milestones M1–M5 are implemented and running in production.
+All milestones M1–M6 are implemented and running in production. M7 (Series Ignored Feature) is in progress.
 
 - **M1 — Ingestion:** CLI ingester, RSS fetch/parse, dedup, storage
 - **M2 — Enrichment:** On-demand OMDb enrichment via web UI; stores `imdb_id` for direct linking
 - **M3 — Web Application:** FastAPI + React CDN frontend; movie list with Filtered/All toggle; rating badges link to IMDb/RT
 - **M4 — Alerting + Polish:** Feed health tracking per feed; SMTP alert on 24h downtime
 - **M5 — News Feeds + Filter Processor:** News ingestion (all types); CLI Filter Processor (regex only); News tab in web UI; export/import for AI-filtered feeds
+- **M6 — Series Feed:** EZTV ingestion; Series tab with read-tracking; feed health + alerting
+- **M7 — Series Ignored Feature:** `is_ignored` column; three Series sub-views (Filtered/All/Read); Ignore toggle at series title level; ingester inherits ignored status on new episodes
 
 ## Files touched
 
@@ -139,13 +141,59 @@ This script (idempotent — safe to re-run) applies:
 - **Q-010:** Entries without S##E## pattern are logged and skipped (V-027). One skipped per ~30 entries observed in practice.
 - **Q-011:** EZTV does not provide an IMDb ID. `imdb_id` is always stored as null. The UI falls back to an IMDb title-search URL for every series entry.
 
-### Migration steps
+### Migration steps (M6)
 - Fresh DB: `create_all()` on startup creates `series` table automatically
 - Existing DB: manual `ALTER TABLE` or new `migrate_002_series.sh` idempotent script
 
-### How to test locally
+### How to test locally (M6)
 1. Run ingester: `python src/cli/main.py` — verify `series` table populated from EZTV feed
 2. Open web app → Series tab — verify grouping by title → season → episode
 3. Confirm multiple quality variants of same episode appear as separate links in one row
 4. Confirm series title links to IMDb (where `imdb_id` is not null)
 5. Simulate EZTV feed down → verify email alert fires after 24h
+
+---
+
+## M7 — Series Ignored Feature
+
+### Scope
+- `is_ignored` boolean column on `Series` model (default `False`); indexed
+- CLI Ingester: after dedup insert/merge, check if any existing episode for the same title has `is_ignored = True`; if so, set `is_ignored = True` on the new row
+- `GET /api/series?view=filtered|all|read` — single endpoint, three behaviours:
+  - `filtered` (default): `is_read = False AND is_ignored = False`
+  - `all`: `is_read = False` (ignored rows included)
+  - `read`: `is_read = True` (all read); result sorted with not-ignored series titles first
+- `POST /api/series/ignore` — body `{"title": "…"}`; bulk-update all rows for that title to `is_ignored = True`
+- `POST /api/series/unignore` — same shape; sets `is_ignored = False`
+- Series tab: three sub-tabs (Filtered / All / Read); Ignore/Unignore toggle button at series title level (h2 row); Mark All Read button present on Filtered and All sub-tabs only
+- `migrate_002_series_ignored.sh` — idempotent script adding `is_ignored BOOLEAN DEFAULT FALSE NOT NULL` column
+
+### Files to touch
+- `src/common/models.py` — add `is_ignored` mapped column + `ix_series_is_ignored` index to `Series`
+- `src/cli/dedup.py` — after upsert, check `is_ignored` propagation for new rows
+- `src/webui/routes.py` — update `get_series` with `view` param; add `ignore` and `unignore` endpoints
+- `src/webui/static/app.js` — sub-tabs, Ignore toggle button, updated state management
+- `migrate_002_series_ignored.sh` — new migration script
+
+### Key decisions
+- `is_ignored` stored per-episode row (not a separate table) but always toggled title-wide; this keeps the schema simple while allowing the ingester to inherit the flag on new rows by querying existing episodes for the same title
+- Sorting in the `read` view: group by title, determine title-level `is_ignored` from any episode in the group, sort not-ignored titles first; within each title sort normally by season → episode
+
+### Migration steps (M7)
+- Fresh DB: `create_all()` on startup adds `is_ignored` column automatically
+- Existing DB:
+  ```bash
+  bash migrate_002_series_ignored.sh
+  ```
+  This script (idempotent) runs:
+  ```sql
+  ALTER TABLE series ADD COLUMN is_ignored BOOLEAN NOT NULL DEFAULT FALSE;
+  ```
+
+### How to test locally (M7)
+1. Open web app → Series tab — confirm three sub-tabs: Filtered, All, Read
+2. Filtered tab (default): confirm no ignored series appear
+3. Click "Ignore" on a series title — confirm it disappears from Filtered, appears in All
+4. Click "Unignore" — confirm it returns to Filtered
+5. Run ingester while a series is ignored — confirm new episodes for that title are stored with `is_ignored = true` and absent from Filtered
+6. Mark some episodes as read, then check Read tab — confirm not-ignored read series appear before ignored read series

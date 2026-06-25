@@ -49,6 +49,7 @@ class Series(Base):
         Index("ix_series_title_season_episode", "title", "season", "episode", unique=True),
         Index("ix_series_title", "title"),
         Index("ix_series_is_read", "is_read"),
+        Index("ix_series_is_ignored", "is_ignored"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -60,6 +61,7 @@ class Series(Base):
     feed_entry_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     ingested_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_ignored: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 

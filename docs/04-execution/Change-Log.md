@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Added — M7: Series Ignored Feature
+- `series.is_ignored` boolean column (default `false`); title-level flag — toggling it updates every episode row sharing that title
+- `GET /api/series?view=filtered|all|read` — three sub-views replacing the previous single unread-only list
+  - `filtered` (default): unread AND not ignored
+  - `all`: unread including ignored
+  - `read`: all read entries; not-ignored titles listed before ignored titles
+- `POST /api/series/ignore` and `POST /api/series/unignore` — title-level toggle endpoints; body `{"title": "…"}`; return affected row count
+- CLI Ingester inherits ignored status: new episodes ingested for an already-ignored series title are stored with `is_ignored = true`
+- Series tab gains three sub-tabs (Filtered / All / Read) and an Ignore/Unignore toggle button at the series title level
+- `migrate_002_series_ignored.sh` — idempotent migration adding `is_ignored` column to existing DBs
+
+---
+
 ### Changed — Export/Import universalised; Mark All Read added
 - Export (`GET /api/news/{feed}/export`) and Import (`POST /api/news/{feed}/import`) now available for **all** news feed types, not just `ai_filtered`; `_get_ai_filtered_feed` type gate removed; raw endpoint (`GET /api/news/{feed}/raw`) similarly unrestricted
 - `FeedToolbar` component (Export / Import Results / Mark All Read) now renders on every news feed view

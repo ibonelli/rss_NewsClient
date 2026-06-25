@@ -6,7 +6,7 @@ The fetch CLI is designed to work with cron. For example running it every 15 min
 
 ```bash
 apt install mariadb-server -y
-sudo apt install python3-sqlalchemy python3-feedparser python3-yaml python3-httpx -y
+sudo apt install python3-sqlalchemy python3-feedparser python3-yaml python3-httpx python3-venv -y
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt

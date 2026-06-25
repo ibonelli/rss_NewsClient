@@ -603,6 +603,14 @@ body {
     padding: 0.75rem 1rem;
     background: var(--bg-card);
     border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.series-ignore-btn {
+    margin-left: auto;
+    font-size: 0.75rem;
 }
 
 .series-title a {
