@@ -10,7 +10,7 @@ All milestones M1–M6 are implemented and running in production. M7 (Series Ign
 - **M4 — Alerting + Polish:** Feed health tracking per feed; SMTP alert on 24h downtime
 - **M5 — News Feeds + Filter Processor:** News ingestion (all types); CLI Filter Processor (regex only); News tab in web UI; export/import for AI-filtered feeds
 - **M6 — Series Feed:** EZTV ingestion; Series tab with read-tracking; feed health + alerting
-- **M7 — Series Ignored Feature:** `is_ignored` column; three Series sub-views (Filtered/All/Read); Ignore toggle at series title level; ingester inherits ignored status on new episodes
+- **M7 — Series Two-Table Split + Ignore:** Split `series` into `series` (title-level) + `series_episodes` (episode-level); `is_ignored` on `series` row; three Series views (Unread/All/Ignored); Ignore toggle at series title level; ingester inherits ignored status on new episodes
 
 ## Files touched
 

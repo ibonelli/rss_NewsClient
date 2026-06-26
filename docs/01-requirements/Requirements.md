@@ -17,10 +17,11 @@
 
 ### Ingestion — Series
 - **FR-039:** The system MUST fetch RSS data from `https://eztv.re/ezrss.xml` on the same ~2h cron schedule as movies.
-- **FR-040:** The system MUST parse each RSS entry to extract: series name, season number, episode number, quality/resolution, IMDb ID, and torrent download page URL.
-- **FR-041:** The system MUST deduplicate by `series_name + season + episode`, merging new quality variants into the existing record rather than creating a new row.
-- **FR-042:** The system MUST store series data in a dedicated `Series` database table.
+- **FR-040:** The system MUST parse each RSS entry to extract: series name, season number, episode number, quality/resolution, and torrent download page URL. (IMDb ID is not present in the EZTV feed — see ADR-010.)
+- **FR-041:** Deduplication is two-level: (a) series title uniqueness in the `series` table; (b) episode uniqueness by `(series_id, season, episode)` in the `series_episodes` table. New quality variants for an existing episode MUST be merged rather than duplicated.
+- **FR-042:** The system MUST store series data in two dedicated tables: `series` (one row per unique title) and `series_episodes` (one row per unique title+season+episode).
 - **FR-043:** Feed health tracking MUST extend to the EZTV series feed.
+- **FR-053:** When a new episode is ingested for a series that is already marked `is_ignored = true`, the new episode MUST inherit `is_ignored` at the series level (no per-episode flag needed — ignore is a series-level attribute).
 
 ### Ingestion — News
 - **FR-019:** The system MUST support ingesting from news RSS/Atom feeds configurable in `config.yaml`, each with a `type` field: `unfiltered`, `filtered`, or `ai_filtered`.
@@ -52,9 +53,11 @@
 
 ### Web Application — Series
 - **FR-044:** The web application MUST provide a Series tab, distinct from Movies and News.
-- **FR-045:** The Series tab MUST group entries by series title → season → episode. Each series title MUST link to its IMDb page. Each quality variant within an episode row MUST link to its torrent download page.
-- **FR-046:** The Series tab MUST provide per-entry read/unread tracking persisted in the database, identical in behaviour to movies.
+- **FR-045:** The Series tab MUST group episodes by series title → season → episode. Each series title MUST link to its IMDb page (direct link if `imdb_id` is known; IMDb title-search URL otherwise). Each quality variant within an episode row MUST link to its torrent download page.
+- **FR-046:** The Series tab MUST provide per-episode read/unread tracking persisted in the `series_episodes` table, independent per episode.
 - **FR-047:** The system MUST send an email alert if the EZTV feed is unreachable for more than 24 hours (reusing existing alerter logic).
+- **FR-051:** The Series tab MUST provide an Ignore/Unignore toggle at the series title level. Ignored series MUST be hidden from the default (Unread) and All views.
+- **FR-052:** The Series tab MUST provide three views selectable by the user: **Unread** (default — non-ignored series with at least one unread episode), **All** (non-ignored series, all episodes regardless of read status), **Ignored** (only ignored series).
 - **FR-051:** The Series tab MUST provide a per-series "Ignore" toggle that prevents all episodes of that series from appearing in the default (Filtered) view. Ignored status MUST be persisted in the database and survive app restart.
 - **FR-052:** The Series tab MUST provide three sub-views: **Filtered** (default, unread AND not ignored), **All** (unread including ignored), and **Read** (all read entries, not-ignored first then ignored).
 - **FR-053:** When new episodes are ingested for a series whose existing episodes are marked ignored, the new episodes MUST inherit the ignored status automatically.
@@ -79,7 +82,7 @@
 
 ### Mark All as Read
 - **FR-048:** The Movies tab MUST provide a "Mark All Read" button that marks every currently listed unread movie as read and removes them from the view in a single action.
-- **FR-049:** The Series tab MUST provide a "Mark All Read" button that marks every unread series episode as read and removes them from the view in a single action.
+- **FR-049:** The Series tab MUST provide a "Mark All Read" button that marks every unread `series_episodes` row as read and removes them from the Unread view in a single action.
 - **FR-050:** Every news feed view MUST provide a "Mark All Read" button that marks all `news_items` (and any `ai_filtered_views`) for that feed as read in a single action.
 
 ### Read Tracking
@@ -99,7 +102,8 @@
 
 ## 5) Data Requirements
 - **Movies:** title, year, genre(s), torrent URL, quality/resolution, IMDb ID (from enrichment), IMDb rating, RT expert rating, RT audience rating, poster URL, feed entry date, enrichment date, read status
-- **Series:** series title, IMDb ID, season number, episode number, quality variants (JSON list of `{quality, torrent_page_url}`), RSS entry date, ingestion timestamp, read status, ignored status
+- **Series (`series` table):** series title (unique), IMDb ID (nullable), is_ignored flag
+- **Series episodes (`series_episodes` table):** FK → series, season number, episode number, quality variants (JSON list of `{quality, torrent_page_url}`), RSS entry date, ingestion timestamp, is_read flag, ignored status
 - **News — `news_items` (all feed types):** title, URL, publication date, source feed name, full content, ingestion timestamp, read status, matched_filter (nullable)
 - **News — `ai_filtered_views` (AI-filtered feeds only):** source feed name, title, URL, publication date, category, summary, tags (list), read status, keep-as-context flag, ingestion timestamp, source_item_id (FK → news_items)
 - Retention: indefinite (database on disk)
@@ -124,10 +128,12 @@
 - **AC-011:** For AI-filtered feeds, both the AI-filtered sub-view and the raw unprocessed sub-view are accessible in the News tab.
 - **AC-012:** After import, each `ai_filtered_views` row carries a `source_item_id` that correctly references its originating `news_items` row.
 - **AC-013:** Series episodes from the EZTV feed appear in the Series tab, grouped by series title → season → episode.
-- **AC-014:** Multiple quality variants of the same episode are merged into a single row, each with a working torrent download page link.
-- **AC-015:** Each series title in the UI links to its IMDb page.
-- **AC-016:** Read-tracking per series entry is persisted in the database and survives app restart.
+- **AC-014:** Multiple quality variants of the same episode are merged into a single `series_episodes` row, each with a working torrent download page link.
+- **AC-015:** Each series title in the UI links to its IMDb page (direct when `imdb_id` is known; search URL otherwise).
+- **AC-016:** Read-tracking per episode is persisted in `series_episodes` and survives app restart.
 - **AC-017:** An email alert fires if the EZTV feed is unreachable for > 24 hours.
+- **AC-018:** Ignoring a series hides it from the Unread and All views; it appears only in the Ignored view.
+- **AC-019:** New episodes ingested for an ignored series are not shown in the Unread or All views.
 - **AC-018:** Clicking "Ignore" on a series title removes it from the Filtered sub-view and keeps it visible in the All sub-view. Clicking "Unignore" reverses this.
 - **AC-019:** The Read sub-view lists all read series, with not-ignored titles sorted before ignored titles.
 - **AC-020:** Newly ingested episodes for an already-ignored series appear as ignored and are absent from the Filtered sub-view without any user action.

@@ -4,7 +4,7 @@
 
 | Component | Responsibility | Runtime |
 |---|---|---|
-| **CLI Ingester** (`src/cli/main.py`) | Fetch all RSS/Atom feeds (movie + series + news), parse, deduplicate (movies and series), store raw data to `movies`, `series`, and `news_items`, update feed health | Cron-triggered process (runs and exits, step 1) |
+| **CLI Ingester** (`src/cli/main.py`) | Fetch all RSS/Atom feeds (movie + series + news), parse, deduplicate (movies and series), store raw data to `movies`, `series`, `series_episodes`, and `news_items`, update feed health | Cron-triggered process (runs and exits, step 1) |
 | **CLI Filter Processor** (`src/cli/filter.py`) | Sync `filters` table from config; for each `filtered` feed, regex-match `news_items` and set `matched_filter_id` on matches — never deletes rows | Cron-triggered process (runs and exits, step 2 — immediately after Ingester) |
 | **FastAPI Web UI** (`src/webui/main.py`) | JSON API for movies, series, and news (filtering, read-tracking, on-demand enrichment); AI-filtered export (`GET`) and import (`POST`) endpoints; static React frontend | Long-running local process (on-demand) |
 | **Database** (MySQL/SQLite) | Persistent state for all data | Shared resource |
@@ -67,9 +67,12 @@ src/
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/api/series` | All series grouped by title → season → episode |
-| POST | `/api/series/{id}/read` | Mark series entry as read |
-| POST | `/api/series/{id}/unread` | Mark series entry as unread |
+| GET | `/api/series` | Series grouped by title → season → episode; `view` param: `unread` (default) \| `all` \| `ignored` |
+| POST | `/api/series/{series_id}/ignore` | Set `is_ignored = true` on `series` row |
+| POST | `/api/series/{series_id}/unignore` | Set `is_ignored = false` on `series` row |
+| POST | `/api/series/episodes/{episode_id}/read` | Mark episode as read |
+| POST | `/api/series/episodes/{episode_id}/unread` | Mark episode as unread |
+| POST | `/api/series/read-all` | Mark all unread episodes as read |
 
 **News**
 
@@ -93,9 +96,9 @@ All three processes connect via SQLAlchemy using `database.url` from `config.yam
 
 | Process | Reads | Writes |
 |---|---|---|
-| CLI Ingester | — | `movies`, `series`, `news_items`, `feed_health` |
+| CLI Ingester | — | `movies`, `series`, `series_episodes`, `news_items`, `feed_health` |
 | CLI Filter Processor | `news_items`, `filters` | `filters` (sync), `news_items.matched_filter_id` |
-| FastAPI Web UI | `movies`, `series`, `news_items`, `ai_filtered_views`, `feed_health`, `filters` | `movies.is_read`, `movies` (enrichment), `series.is_read`, `news_items.is_read`, `ai_filtered_views` (full replace on import), `ai_filtered_views.is_read`, `ai_filtered_views.keep_as_context` |
+| FastAPI Web UI | `movies`, `series`, `series_episodes`, `news_items`, `ai_filtered_views`, `feed_health`, `filters` | `movies.is_read`, `movies` (enrichment), `series.is_ignored`, `series_episodes.is_read`, `news_items.is_read`, `ai_filtered_views` (full replace on import), `ai_filtered_views.is_read`, `ai_filtered_views.keep_as_context` |
 
 **Concurrency:** SQLite has a single-writer limitation — acceptable since Ingester and Filter Processor run sequentially in the same cron chain, and web app writes are infrequent (read-tracking and occasional imports). MySQL handles concurrent reads and writes without issue.
 

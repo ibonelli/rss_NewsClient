@@ -7,8 +7,12 @@
 - **Owner:** CLI Ingester (creates/updates); Web UI (reads, marks as read, triggers enrichment)
 
 ### Series
-- **Definition:** A TV series episode entry from the EZTV RSS feed. One row per unique `(title, season, episode)` combination; quality variants are merged into the `qualities` JSON array on the same row.
-- **Owner:** CLI Ingester (creates/updates); Web UI (reads, marks as read, ignores/unignores)
+- **Definition:** One row per unique series title. Holds title-level metadata: `imdb_id` and the `is_ignored` flag.
+- **Owner:** CLI Ingester (creates on first episode seen for title); Web UI (reads; sets `is_ignored`)
+
+### SeriesEpisode
+- **Definition:** One row per unique `(series_id, season, episode)` combination. Holds episode-level data: quality variants, feed date, read status.
+- **Owner:** CLI Ingester (creates/updates — merges quality variants); Web UI (reads; marks as read/unread)
 
 ### FeedHealth
 - **Definition:** One row per configured feed tracking last success, last attempt, and error state. Used for downtime detection and alerting.
@@ -67,25 +71,42 @@ class Movie(Base):
 class Series(Base):
     __tablename__ = "series"
 
+    id: int              # PK, auto-increment
+    title: str           # NOT NULL, UNIQUE — normalized series name
+    imdb_id: str | None  # nullable — e.g. "tt0903747"; not in EZTV feed, reserved for future use
+    is_ignored: bool     # default False — hides series from Unread and All views
+    created_at: datetime
+    updated_at: datetime
+```
+
+**Indexes:**
+- `ix_series_title` UNIQUE on `title` — primary dedup key
+- `ix_series_is_ignored` on `is_ignored` — view filtering
+
+---
+
+### SeriesEpisode
+
+```python
+class SeriesEpisode(Base):
+    __tablename__ = "series_episodes"
+
     id: int                          # PK, auto-increment
-    title: str                       # NOT NULL — normalized series name
-    imdb_id: str | None              # nullable — e.g. "tt0903747"; from RSS entry
+    series_id: int                   # NOT NULL, FK → series.id
     season: int                      # NOT NULL
     episode: int                     # NOT NULL
     qualities: str                   # NOT NULL, JSON array: [{"quality": "720p", "torrent_page_url": "..."}]
     feed_entry_date: datetime | None # publication date from RSS entry
     ingested_at: datetime            # auto-set on insert
     is_read: bool                    # default False
-    is_ignored: bool                 # default False — title-level flag; set/cleared for all episodes sharing the title
     created_at: datetime             # auto-set on insert
     updated_at: datetime             # auto-set on insert and update
 ```
 
 **Indexes:**
-- `ix_series_title_season_episode` UNIQUE on `(title, season, episode)` — primary dedup key
-- `ix_series_title` on `title` — grouping queries
-- `ix_series_is_read` on `is_read`
-- `ix_series_is_ignored` on `is_ignored`
+- `ix_series_episodes_series_season_ep` UNIQUE on `(series_id, season, episode)` — primary dedup key
+- `ix_series_episodes_series_id` on `series_id` — join queries
+- `ix_series_episodes_is_read` on `is_read`
 
 ---
 
@@ -211,8 +232,9 @@ class AIFilteredView(Base):
 - **V-026:** `imdb_id`, if present, MUST match format `tt\d+`; store as-is, do not validate against external source
 - **V-027:** Entries where S##E## cannot be parsed from the title MUST be logged and skipped (not stored)
 
-### Series deduplication
-- **V-025:** On insert, check for existing record with same `(title, season, episode)`; if found, merge quality variants (union by `quality` value, preserving all `torrent_page_url` entries)
+### Series deduplication (two-level)
+- **V-025a:** On insert, check `series` table for existing row with same `title`. If not found, insert a new `series` row (inheriting no `is_ignored` — defaults to `false`).
+- **V-025b:** Check `series_episodes` table for existing row with same `(series_id, season, episode)`. If found, merge quality variants (union by `quality` value, preserving all `torrent_page_url` entries). If not found, insert a new `series_episodes` row.
 
 ### NewsItem (on ingestion)
 - **V-012:** `title` MUST NOT be empty
@@ -491,15 +513,20 @@ On failure: same shape with all rating fields `null`, `imdb_id` `null`, and `enr
 ### GET `/api/series`
 
 Query params:
-- `view` (string, default `filtered`) — `filtered` (unread AND not ignored), `all` (unread including ignored), or `read` (all read entries)
+- `view` (string, default `unread`) — `unread` | `all` | `ignored`
+  - `unread`: non-ignored series with ≥ 1 unread episode
+  - `all`: non-ignored series, all episodes regardless of read status
+  - `ignored`: only ignored series, all their episodes
 
 ```json
 {
+  "view": "unread",
   "series": [
     {
+      "id": 1,
       "title": "Breaking Bad",
-      "imdb_id": "tt0903747",
-      "imdb_url": "https://www.imdb.com/title/tt0903747/",
+      "imdb_id": null,
+      "imdb_url": "https://www.imdb.com/search/title/?title=Breaking+Bad&title_type=tv_series",
       "is_ignored": false,
       "seasons": [
         {
@@ -513,8 +540,7 @@ Query params:
                 {"quality": "1080p", "torrent_page_url": "https://eztv.re/ep/..."}
               ],
               "feed_entry_date": "2026-06-19T10:00:00Z",
-              "is_read": false,
-              "is_ignored": false
+              "is_read": false
             }
           ]
         }
@@ -524,9 +550,19 @@ Query params:
 }
 ```
 
-`imdb_url` is omitted from the response when `imdb_id` is null. `is_ignored` is the same value on every episode of a title — it is also surfaced at the series level for convenience. For `view=read`, not-ignored series appear before ignored series.
+`imdb_url` uses `https://www.imdb.com/title/{imdb_id}/` when `imdb_id` is known; falls back to an IMDb title-search URL otherwise (ADR-010). `is_ignored` lives only at the series level — episodes carry no ignore flag.
 
-### POST `/api/series/{id}/read` and `/api/series/{id}/unread`
+### POST `/api/series/{series_id}/ignore` and `/api/series/{series_id}/unignore`
+
+Sets `is_ignored` on the `series` row identified by `series_id` (PK). Ignored series are excluded from `unread` and `all` views and appear only in the `ignored` view.
+
+```json
+{ "id": 1, "title": "Breaking Bad", "is_ignored": true }
+```
+
+### POST `/api/series/episodes/{episode_id}/read` and `/api/series/episodes/{episode_id}/unread`
+
+Sets `is_read` on a `series_episodes` row.
 
 ```json
 { "id": 7, "is_read": true }
@@ -534,30 +570,10 @@ Query params:
 
 ### POST `/api/series/read-all`
 
-Marks all unread series episodes as read. Returns the count marked.
+Marks all unread `series_episodes` rows as read. Returns the count marked.
 
 ```json
 { "marked_read": 22 }
-```
-
-### POST `/api/series/ignore`
-
-Body: `{ "title": "Breaking Bad" }`
-
-Sets `is_ignored = true` on every episode row sharing that title. Returns the count of affected rows.
-
-```json
-{ "title": "Breaking Bad", "is_ignored": true, "affected": 14 }
-```
-
-### POST `/api/series/unignore`
-
-Body: `{ "title": "Breaking Bad" }`
-
-Sets `is_ignored = false` on every episode row sharing that title.
-
-```json
-{ "title": "Breaking Bad", "is_ignored": false, "affected": 14 }
 ```
 
 ### GET `/api/health`

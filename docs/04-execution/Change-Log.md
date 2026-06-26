@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Planned — M7: Series Two-Table Split + Ignore
+- `series` table: one row per unique title (`title` UNIQUE, `imdb_id` nullable, `is_ignored` bool)
+- `series_episodes` table: one row per `(series_id, season, episode)`; FK → `series.id`; carries `qualities`, `feed_entry_date`, `ingested_at`, `is_read`
+- Deduplication now two-level: upsert series title first, then upsert episode
+- Ingester inherits `is_ignored` from parent series row when inserting new episodes
+- New endpoints: `POST /api/series/{id}/ignore`, `/unignore`; `POST /api/series/episodes/{id}/read`, `/unread`
+- `GET /api/series` gains `view` param: `unread` (default) | `all` | `ignored`
+- `POST /api/series/read-all` now marks `series_episodes.is_read`
+- Series tab gains Ignore toggle per title and view switcher (Unread / All / Ignored)
+- Migration: none — use `clear_db.sh` then re-ingest
+
 ### Added — M7: Series Ignored Feature
 - `series.is_ignored` boolean column (default `false`); title-level flag — toggling it updates every episode row sharing that title
 - `GET /api/series?view=filtered|all|read` — three sub-views replacing the previous single unread-only list
