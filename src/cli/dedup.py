@@ -208,6 +208,12 @@ def deduplicate_and_store_series(session: Session, entries: list[dict]) -> dict:
                 stats["merged"] += 1
                 logger.debug("Merged quality '%s' for '%s' S%02dE%02d", quality, title, season, episode)
             else:
+                # Inherit ignored status if any existing episode for this title is ignored (FR-053)
+                title_ignored = (
+                    session.query(Series.is_ignored)
+                    .filter(Series.title == title, Series.is_ignored == True)
+                    .first()
+                ) is not None
                 session.add(Series(
                     title=title,
                     imdb_id=entry.get("imdb_id"),
@@ -217,6 +223,7 @@ def deduplicate_and_store_series(session: Session, entries: list[dict]) -> dict:
                     feed_entry_date=entry.get("feed_entry_date"),
                     ingested_at=datetime.utcnow(),
                     is_read=False,
+                    is_ignored=title_ignored,
                     created_at=datetime.utcnow(),
                     updated_at=datetime.utcnow(),
                 ))

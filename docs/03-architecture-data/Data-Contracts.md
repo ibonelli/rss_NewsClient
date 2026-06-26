@@ -8,7 +8,7 @@
 
 ### Series
 - **Definition:** A TV series episode entry from the EZTV RSS feed. One row per unique `(title, season, episode)` combination; quality variants are merged into the `qualities` JSON array on the same row.
-- **Owner:** CLI Ingester (creates/updates); Web UI (reads, marks as read)
+- **Owner:** CLI Ingester (creates/updates); Web UI (reads, marks as read, ignores/unignores)
 
 ### FeedHealth
 - **Definition:** One row per configured feed tracking last success, last attempt, and error state. Used for downtime detection and alerting.
@@ -76,6 +76,7 @@ class Series(Base):
     feed_entry_date: datetime | None # publication date from RSS entry
     ingested_at: datetime            # auto-set on insert
     is_read: bool                    # default False
+    is_ignored: bool                 # default False — title-level flag; set/cleared for all episodes sharing the title
     created_at: datetime             # auto-set on insert
     updated_at: datetime             # auto-set on insert and update
 ```
@@ -84,6 +85,7 @@ class Series(Base):
 - `ix_series_title_season_episode` UNIQUE on `(title, season, episode)` — primary dedup key
 - `ix_series_title` on `title` — grouping queries
 - `ix_series_is_read` on `is_read`
+- `ix_series_is_ignored` on `is_ignored`
 
 ---
 
@@ -488,6 +490,9 @@ On failure: same shape with all rating fields `null`, `imdb_id` `null`, and `enr
 
 ### GET `/api/series`
 
+Query params:
+- `view` (string, default `filtered`) — `filtered` (unread AND not ignored), `all` (unread including ignored), or `read` (all read entries)
+
 ```json
 {
   "series": [
@@ -495,6 +500,7 @@ On failure: same shape with all rating fields `null`, `imdb_id` `null`, and `enr
       "title": "Breaking Bad",
       "imdb_id": "tt0903747",
       "imdb_url": "https://www.imdb.com/title/tt0903747/",
+      "is_ignored": false,
       "seasons": [
         {
           "season": 1,
@@ -507,7 +513,8 @@ On failure: same shape with all rating fields `null`, `imdb_id` `null`, and `enr
                 {"quality": "1080p", "torrent_page_url": "https://eztv.re/ep/..."}
               ],
               "feed_entry_date": "2026-06-19T10:00:00Z",
-              "is_read": false
+              "is_read": false,
+              "is_ignored": false
             }
           ]
         }
@@ -517,7 +524,7 @@ On failure: same shape with all rating fields `null`, `imdb_id` `null`, and `enr
 }
 ```
 
-`imdb_url` is omitted from the response when `imdb_id` is null.
+`imdb_url` is omitted from the response when `imdb_id` is null. `is_ignored` is the same value on every episode of a title — it is also surfaced at the series level for convenience. For `view=read`, not-ignored series appear before ignored series.
 
 ### POST `/api/series/{id}/read` and `/api/series/{id}/unread`
 
@@ -531,6 +538,26 @@ Marks all unread series episodes as read. Returns the count marked.
 
 ```json
 { "marked_read": 22 }
+```
+
+### POST `/api/series/ignore`
+
+Body: `{ "title": "Breaking Bad" }`
+
+Sets `is_ignored = true` on every episode row sharing that title. Returns the count of affected rows.
+
+```json
+{ "title": "Breaking Bad", "is_ignored": true, "affected": 14 }
+```
+
+### POST `/api/series/unignore`
+
+Body: `{ "title": "Breaking Bad" }`
+
+Sets `is_ignored = false` on every episode row sharing that title.
+
+```json
+{ "title": "Breaking Bad", "is_ignored": false, "affected": 14 }
 ```
 
 ### GET `/api/health`
