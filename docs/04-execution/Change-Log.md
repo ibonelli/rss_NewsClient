@@ -2,27 +2,21 @@
 
 ## Unreleased
 
-### Planned — M7: Series Two-Table Split + Ignore
+### Added — M7: Series Two-Table Split + Ignore
 - `series` table: one row per unique title (`title` UNIQUE, `imdb_id` nullable, `is_ignored` bool)
 - `series_episodes` table: one row per `(series_id, season, episode)`; FK → `series.id`; carries `qualities`, `feed_entry_date`, `ingested_at`, `is_read`
-- Deduplication now two-level: upsert series title first, then upsert episode
-- Ingester inherits `is_ignored` from parent series row when inserting new episodes
-- New endpoints: `POST /api/series/{id}/ignore`, `/unignore`; `POST /api/series/episodes/{id}/read`, `/unread`
-- `GET /api/series` gains `view` param: `unread` (default) | `all` | `ignored`
+- Deduplication now two-level: upsert series title first, then upsert episode; `session.flush()` used between levels to populate `series.id` before the episode insert
+- `is_ignored` at title level only — new episodes for an ignored series automatically inherit ignore status via JOIN at query time (no per-episode flag)
+- `GET /api/series?view=unread|all|ignored` — three views (replaces old `filtered|all|read`)
+  - `unread` (default): non-ignored series with at least one unread episode
+  - `all`: non-ignored series, all episodes regardless of read status
+  - `ignored`: only ignored series
+- Response includes `series.id`, `imdb_url` (always present; IMDb title-search URL when `imdb_id` is null per ADR-010)
+- `POST /api/series/{series_id}/ignore` and `/api/series/{series_id}/unignore` — PK-based (O(1) single row update)
+- `POST /api/series/episodes/{episode_id}/read` and `/unread` — episode-level read tracking
 - `POST /api/series/read-all` now marks `series_episodes.is_read`
-- Series tab gains Ignore toggle per title and view switcher (Unread / All / Ignored)
-- Migration: none — use `clear_db.sh` then re-ingest
-
-### Added — M7: Series Ignored Feature
-- `series.is_ignored` boolean column (default `false`); title-level flag — toggling it updates every episode row sharing that title
-- `GET /api/series?view=filtered|all|read` — three sub-views replacing the previous single unread-only list
-  - `filtered` (default): unread AND not ignored
-  - `all`: unread including ignored
-  - `read`: all read entries; not-ignored titles listed before ignored titles
-- `POST /api/series/ignore` and `POST /api/series/unignore` — title-level toggle endpoints; body `{"title": "…"}`; return affected row count
-- CLI Ingester inherits ignored status: new episodes ingested for an already-ignored series title are stored with `is_ignored = true`
-- Series tab gains three sub-tabs (Filtered / All / Read) and an Ignore/Unignore toggle button at the series title level
-- `migrate_002_series_ignored.sh` — idempotent migration adding `is_ignored` column to existing DBs
+- Series tab: view switcher (Unread / All / Ignored); Ignore/Unignore per title; Mark All Read hidden on Ignored view
+- `clear_db.sh`: auto-detects old `series` schema (M6) and drops/recreates it; skips missing tables gracefully; calls `init_db` after clearing
 
 ---
 

@@ -17,8 +17,9 @@ PYTHON="${REPO_DIR}/.venv/bin/python3"
 import sys
 sys.path.insert(0, ".")
 
+from sqlalchemy import inspect, text
 from src.common.config import load_config
-from src.common.db import get_engine
+from src.common.db import get_engine, init_db
 
 config = load_config()
 engine = get_engine(config)
@@ -28,20 +29,35 @@ TABLES = [
     "ai_filtered_views",
     "filters",
     "news_items",
+    "series_episodes",
     "series",
     "movies",
     "feed_health",
 ]
 
+existing_tables = set(inspect(engine).get_table_names())
+
 with engine.begin() as conn:
     dialect = engine.dialect.name
     if dialect == "mysql":
-        conn.execute(__import__("sqlalchemy").text("SET FOREIGN_KEY_CHECKS = 0"))
+        conn.execute(text("SET FOREIGN_KEY_CHECKS = 0"))
     for table in TABLES:
-        result = conn.execute(__import__("sqlalchemy").text(f"DELETE FROM `{table}`"))
+        if table not in existing_tables:
+            print(f"  {table}: (table does not exist — skipped)")
+            continue
+        result = conn.execute(text(f"DELETE FROM `{table}`"))
         print(f"  {table}: {result.rowcount} rows deleted")
+    # Drop old series table if it has the pre-M7 single-table schema
+    if "series" in existing_tables:
+        series_cols = {c["name"] for c in inspect(engine).get_columns("series")}
+        if "season" in series_cols:
+            print("  series: old schema detected — dropping table for M7 migration")
+            conn.execute(text("DROP TABLE IF EXISTS `series`"))
     if dialect == "mysql":
-        conn.execute(__import__("sqlalchemy").text("SET FOREIGN_KEY_CHECKS = 1"))
+        conn.execute(text("SET FOREIGN_KEY_CHECKS = 1"))
 
+# Recreate tables with current schema (idempotent)
+init_db(engine)
+print("Schema updated.")
 print("Done.")
 EOF

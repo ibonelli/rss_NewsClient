@@ -591,9 +591,9 @@ function NewsTab() {
             ${currentFeed && html`
                 <div className="news-feed-content">
                     <div className="feed-type-label">${currentFeed.type}</div>
-                    ${currentFeed.type === "unfiltered" && html`<${UnfilteredFeedView} feedName=${currentFeed.name} />`}
-                    ${currentFeed.type === "filtered" && html`<${FilteredFeedView} feedName=${currentFeed.name} />`}
-                    ${currentFeed.type === "ai_filtered" && html`<${AIFilteredFeedView} feedName=${currentFeed.name} />`}
+                    ${currentFeed.type === "unfiltered" && html`<${UnfilteredFeedView} key=${currentFeed.name} feedName=${currentFeed.name} />`}
+                    ${currentFeed.type === "filtered" && html`<${FilteredFeedView} key=${currentFeed.name} feedName=${currentFeed.name} />`}
+                    ${currentFeed.type === "ai_filtered" && html`<${AIFilteredFeedView} key=${currentFeed.name} feedName=${currentFeed.name} />`}
                 </div>
             `}
         </div>
@@ -605,7 +605,7 @@ function NewsTab() {
 // ---------------------------------------------------------------------------
 
 function SeriesTab() {
-    const [view, setView] = useState("filtered");
+    const [view, setView] = useState("unread");
     const [seriesList, setSeriesList] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -620,7 +620,7 @@ function SeriesTab() {
             .catch(() => { setError("Failed to load series"); setLoading(false); });
     };
 
-    useEffect(() => { loadSeries("filtered"); }, []);
+    useEffect(() => { loadSeries("unread"); }, []);
 
     const handleViewChange = (v) => {
         if (v === view) return;
@@ -629,7 +629,7 @@ function SeriesTab() {
     };
 
     const handleMarkRead = (episodeId) => {
-        fetch(`/api/series/${episodeId}/read`, { method: "POST" });
+        fetch(`/api/series/episodes/${episodeId}/read`, { method: "POST" });
         setSeriesList(prev =>
             prev.map(s => ({
                 ...s,
@@ -652,40 +652,14 @@ function SeriesTab() {
         setMarkingAll(false);
     };
 
-    const handleIgnore = async (title) => {
-        await fetch("/api/series/ignore", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ title }),
-        });
-        if (view === "filtered") {
-            setSeriesList(prev => prev.filter(s => s.title !== title));
-        } else {
-            setSeriesList(prev => prev.map(s => s.title !== title ? s : {
-                ...s,
-                is_ignored: true,
-                seasons: s.seasons.map(season => ({
-                    ...season,
-                    episodes: season.episodes.map(ep => ({ ...ep, is_ignored: true })),
-                })),
-            }));
-        }
+    const handleIgnore = async (seriesId) => {
+        await fetch(`/api/series/${seriesId}/ignore`, { method: "POST" });
+        setSeriesList(prev => prev.filter(s => s.id !== seriesId));
     };
 
-    const handleUnignore = async (title) => {
-        await fetch("/api/series/unignore", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ title }),
-        });
-        setSeriesList(prev => prev.map(s => s.title !== title ? s : {
-            ...s,
-            is_ignored: false,
-            seasons: s.seasons.map(season => ({
-                ...season,
-                episodes: season.episodes.map(ep => ({ ...ep, is_ignored: false })),
-            })),
-        }));
+    const handleUnignore = async (seriesId) => {
+        await fetch(`/api/series/${seriesId}/unignore`, { method: "POST" });
+        setSeriesList(prev => prev.filter(s => s.id !== seriesId));
     };
 
     if (loading) return html`<div className="loading">Loading series...</div>`;
@@ -695,15 +669,15 @@ function SeriesTab() {
         <div className="series-tab">
             <div className="movies-toolbar">
                 <div className="view-toggle">
-                    <button className=${`btn btn-sm ${view === "filtered" ? "btn-active" : "btn-secondary"}`}
-                        onClick=${() => handleViewChange("filtered")}>Filtered</button>
+                    <button className=${`btn btn-sm ${view === "unread" ? "btn-active" : "btn-secondary"}`}
+                        onClick=${() => handleViewChange("unread")}>Unread</button>
                     <button className=${`btn btn-sm ${view === "all" ? "btn-active" : "btn-secondary"}`}
                         onClick=${() => handleViewChange("all")}>All</button>
-                    <button className=${`btn btn-sm ${view === "read" ? "btn-active" : "btn-secondary"}`}
-                        onClick=${() => handleViewChange("read")}>Read</button>
+                    <button className=${`btn btn-sm ${view === "ignored" ? "btn-active" : "btn-secondary"}`}
+                        onClick=${() => handleViewChange("ignored")}>Ignored</button>
                 </div>
                 <div className="tab-count">${seriesList.length} series</div>
-                ${view !== "read" && html`
+                ${view !== "ignored" && html`
                     <button className="btn btn-secondary btn-sm" onClick=${handleMarkAllRead} disabled=${markingAll}>
                         ${markingAll ? "..." : "Mark All Read"}
                     </button>
@@ -711,52 +685,48 @@ function SeriesTab() {
             </div>
             ${seriesList.length === 0
                 ? html`<div className="empty-state">
-                    ${view === "read"
-                        ? "No read series yet."
+                    ${view === "ignored"
+                        ? "No ignored series."
                         : html`<p>No series to display. Run the ingester first:</p><code>python src/cli/main.py</code>`}
                 </div>`
-                : seriesList.map(series => {
-                    const imdbHref = series.imdb_url ||
-                        `https://www.imdb.com/search/title/?title=${encodeURIComponent(series.title)}&title_type=tv_series`;
-                    return html`
-                        <div key=${series.title} className="series-block">
-                            <h2 className="series-title">
-                                <a href=${imdbHref} target="_blank" rel="noreferrer">${series.title}</a>
-                                ${view !== "read" && (series.is_ignored
-                                    ? html`<button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${() => handleUnignore(series.title)}>Unignore</button>`
-                                    : html`<button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${() => handleIgnore(series.title)}>Ignore</button>`
-                                )}
-                            </h2>
-                            ${series.seasons.map(season => html`
-                                <div key=${season.season} className="season-block">
-                                    <h3 className="season-header">Season ${season.season}</h3>
-                                    <div className="episode-list">
-                                        ${season.episodes.map(ep => html`
-                                            <div key=${ep.id} className="episode-row">
-                                                <span className="episode-label">E${String(ep.episode).padStart(2, "0")}</span>
-                                                <div className="episode-qualities">
-                                                    ${ep.qualities.map((q, i) => html`
-                                                        <a key=${i} href=${q.torrent_page_url} target="_blank" rel="noreferrer" className="quality-link">
-                                                            <${Badge} className="quality-badge">${q.quality}</${Badge}>
-                                                        </a>
-                                                    `)}
-                                                </div>
-                                                ${ep.feed_entry_date && html`
-                                                    <span className="episode-date">${new Date(ep.feed_entry_date).toLocaleDateString()}</span>
-                                                `}
-                                                ${view !== "read" && html`
-                                                    <button className="btn btn-read btn-sm" onClick=${() => handleMarkRead(ep.id)}>
-                                                        Mark Read
-                                                    </button>
-                                                `}
+                : seriesList.map(series => html`
+                    <div key=${series.id} className="series-block">
+                        <h2 className="series-title">
+                            <a href=${series.imdb_url} target="_blank" rel="noreferrer">${series.title}</a>
+                            ${view === "ignored"
+                                ? html`<button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${() => handleUnignore(series.id)}>Unignore</button>`
+                                : html`<button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${() => handleIgnore(series.id)}>Ignore</button>`
+                            }
+                        </h2>
+                        ${series.seasons.map(season => html`
+                            <div key=${season.season} className="season-block">
+                                <h3 className="season-header">Season ${season.season}</h3>
+                                <div className="episode-list">
+                                    ${season.episodes.map(ep => html`
+                                        <div key=${ep.id} className="episode-row">
+                                            <span className="episode-label">E${String(ep.episode).padStart(2, "0")}</span>
+                                            <div className="episode-qualities">
+                                                ${ep.qualities.map((q, i) => html`
+                                                    <a key=${i} href=${q.torrent_page_url} target="_blank" rel="noreferrer" className="quality-link">
+                                                        <${Badge} className="quality-badge">${q.quality}</${Badge}>
+                                                    </a>
+                                                `)}
                                             </div>
-                                        `)}
-                                    </div>
+                                            ${ep.feed_entry_date && html`
+                                                <span className="episode-date">${new Date(ep.feed_entry_date).toLocaleDateString()}</span>
+                                            `}
+                                            ${view !== "ignored" && html`
+                                                <button className="btn btn-read btn-sm" onClick=${() => handleMarkRead(ep.id)}>
+                                                    Mark Read
+                                                </button>
+                                            `}
+                                        </div>
+                                    `)}
                                 </div>
-                            `)}
-                        </div>
-                    `;
-                })
+                            </div>
+                        `)}
+                    </div>
+                `)
             }
         </div>
     `;

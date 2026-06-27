@@ -12,7 +12,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from src.common.models import Movie, Series
+from src.common.models import Movie, Series, SeriesEpisode
 
 __all__ = ["deduplicate_and_store", "deduplicate_and_store_series"]
 
@@ -154,11 +154,12 @@ def _merge_series_qualities(existing_json: str, new_variant: dict) -> str:
 
 
 def deduplicate_and_store_series(session: Session, entries: list[dict]) -> dict:
-    """Deduplicate and store series entries in the database.
+    """Deduplicate and store series entries using the two-table design.
 
-    For each entry:
-    - Check if (title, season, episode) already exists → merge quality variant (V-025)
-    - Else insert as new record
+    Level 1 (V-025a): upsert series title row in `series`.
+    Level 2 (V-025b): upsert episode row in `series_episodes` by (series_id, season, episode).
+    is_ignored lives on the `series` row — new episodes for an ignored series automatically
+    inherit that status via JOIN at query time, requiring no per-episode flag.
 
     Args:
         session: SQLAlchemy session.
@@ -196,34 +197,44 @@ def deduplicate_and_store_series(session: Session, entries: list[dict]) -> dict:
         new_variant = {"quality": quality, "torrent_page_url": torrent_page_url}
 
         try:
-            existing = (
-                session.query(Series)
-                .filter(Series.title == title, Series.season == season, Series.episode == episode)
+            # Level 1: upsert series title row (V-025a)
+            series_row = session.query(Series).filter(Series.title == title).first()
+            if not series_row:
+                series_row = Series(
+                    title=title,
+                    imdb_id=entry.get("imdb_id"),
+                    is_ignored=False,
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow(),
+                )
+                session.add(series_row)
+                session.flush()  # populate series_row.id before inserting episode
+
+            # Level 2: upsert episode row (V-025b)
+            ep_row = (
+                session.query(SeriesEpisode)
+                .filter(
+                    SeriesEpisode.series_id == series_row.id,
+                    SeriesEpisode.season == season,
+                    SeriesEpisode.episode == episode,
+                )
                 .first()
             )
 
-            if existing:
-                existing.qualities = _merge_series_qualities(existing.qualities, new_variant)
-                existing.updated_at = datetime.utcnow()
+            if ep_row:
+                ep_row.qualities = _merge_series_qualities(ep_row.qualities, new_variant)
+                ep_row.updated_at = datetime.utcnow()
                 stats["merged"] += 1
                 logger.debug("Merged quality '%s' for '%s' S%02dE%02d", quality, title, season, episode)
             else:
-                # Inherit ignored status if any existing episode for this title is ignored (FR-053)
-                title_ignored = (
-                    session.query(Series.is_ignored)
-                    .filter(Series.title == title, Series.is_ignored == True)
-                    .first()
-                ) is not None
-                session.add(Series(
-                    title=title,
-                    imdb_id=entry.get("imdb_id"),
+                session.add(SeriesEpisode(
+                    series_id=series_row.id,
                     season=season,
                     episode=episode,
                     qualities=json.dumps([new_variant]),
                     feed_entry_date=entry.get("feed_entry_date"),
                     ingested_at=datetime.utcnow(),
                     is_read=False,
-                    is_ignored=title_ignored,
                     created_at=datetime.utcnow(),
                     updated_at=datetime.utcnow(),
                 ))

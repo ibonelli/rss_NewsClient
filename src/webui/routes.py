@@ -6,6 +6,7 @@ import json
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
@@ -13,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from collections import defaultdict
 
-from src.common.models import AIFilteredView, FeedHealth, Filter, Movie, NewsItem, Series
+from src.common.models import AIFilteredView, FeedHealth, Filter, Movie, NewsItem, Series, SeriesEpisode
 from src.webui.filters import filter_movies, group_by_year
 from src.webui.enrichment import enrich_movie
 
@@ -157,18 +158,31 @@ async def enrich(
 # Series
 # ---------------------------------------------------------------------------
 
-def _build_series_response(entries: list[Series]) -> list[dict]:
-    by_title: dict[str, dict[int, list[Series]]] = defaultdict(lambda: defaultdict(list))
-    for e in entries:
-        by_title[e.title][e.season].append(e)
+def _build_series_response(results: list) -> list[dict]:
+    """Build the series API response from (Series, SeriesEpisode) join tuples."""
+    by_series: dict[int, dict] = {}
+    for series, ep in results:
+        if series.id not in by_series:
+            imdb_url = (
+                f"https://www.imdb.com/title/{series.imdb_id}/"
+                if series.imdb_id
+                else f"https://www.imdb.com/search/title/?title={quote_plus(series.title)}&title_type=tv_series"
+            )
+            by_series[series.id] = {
+                "id": series.id,
+                "title": series.title,
+                "imdb_id": series.imdb_id,
+                "imdb_url": imdb_url,
+                "is_ignored": series.is_ignored,
+                "seasons": defaultdict(list),
+            }
+        by_series[series.id]["seasons"][ep.season].append(ep)
 
     result = []
-    for title in sorted(by_title.keys()):
-        seasons_map = by_title[title]
-        all_eps = [ep for eps in seasons_map.values() for ep in eps]
-        imdb_id = next((ep.imdb_id for ep in all_eps if ep.imdb_id), None)
-        is_ignored = any(ep.is_ignored for ep in all_eps)
-        seasons = [
+    for series_id in sorted(by_series.keys(), key=lambda sid: by_series[sid]["title"]):
+        data = by_series[series_id]
+        seasons_map = data.pop("seasons")
+        data["seasons"] = [
             {
                 "season": season_num,
                 "episodes": [
@@ -178,109 +192,87 @@ def _build_series_response(entries: list[Series]) -> list[dict]:
                         "qualities": json.loads(ep.qualities) if ep.qualities else [],
                         "feed_entry_date": ep.feed_entry_date.isoformat() if ep.feed_entry_date else None,
                         "is_read": ep.is_read,
-                        "is_ignored": ep.is_ignored,
                     }
                     for ep in sorted(seasons_map[season_num], key=lambda e: e.episode)
                 ],
             }
             for season_num in sorted(seasons_map.keys())
         ]
-        series_dict: dict = {
-            "title": title,
-            "imdb_id": imdb_id,
-            "is_ignored": is_ignored,
-            "seasons": seasons,
-        }
-        if imdb_id:
-            series_dict["imdb_url"] = f"https://www.imdb.com/title/{imdb_id}/"
-        result.append(series_dict)
+        result.append(data)
     return result
 
 
 @router.get("/api/series")
 async def get_series(
-    view: str = Query(default="filtered", pattern="^(filtered|all|read)$"),
+    view: str = Query(default="unread", pattern="^(unread|all|ignored)$"),
     session: Session = Depends(_get_session),
 ):
-    if view == "filtered":
-        entries = (
-            session.query(Series)
-            .filter(Series.is_read == False, Series.is_ignored == False)
-            .order_by(Series.title, Series.season, Series.episode)
+    base = session.query(Series, SeriesEpisode).join(
+        SeriesEpisode, SeriesEpisode.series_id == Series.id
+    )
+    if view == "unread":
+        rows = (
+            base.filter(Series.is_ignored == False, SeriesEpisode.is_read == False)
+            .order_by(Series.title, SeriesEpisode.season, SeriesEpisode.episode)
             .all()
         )
-        result = _build_series_response(entries)
     elif view == "all":
-        entries = (
-            session.query(Series)
-            .filter(Series.is_read == False)
-            .order_by(Series.title, Series.season, Series.episode)
+        rows = (
+            base.filter(Series.is_ignored == False)
+            .order_by(Series.title, SeriesEpisode.season, SeriesEpisode.episode)
             .all()
         )
-        result = _build_series_response(entries)
-    else:  # read
-        entries = (
-            session.query(Series)
-            .filter(Series.is_read == True)
-            .order_by(Series.title, Series.season, Series.episode)
+    else:  # ignored
+        rows = (
+            base.filter(Series.is_ignored == True)
+            .order_by(Series.title, SeriesEpisode.season, SeriesEpisode.episode)
             .all()
         )
-        built = _build_series_response(entries)
-        result = sorted(built, key=lambda s: (1 if s["is_ignored"] else 0, s["title"]))
-
-    return {"series": result}
+    return {"view": view, "series": _build_series_response(rows)}
 
 
-@router.post("/api/series/{series_id}/read")
-async def mark_series_read(series_id: int, session: Session = Depends(_get_session)):
-    entry = session.query(Series).filter(Series.id == series_id).first()
-    if not entry:
-        raise HTTPException(status_code=404, detail="Series entry not found")
-    entry.is_read = True
-    entry.updated_at = datetime.utcnow()
+@router.post("/api/series/{series_id}/ignore")
+async def ignore_series(series_id: int, session: Session = Depends(_get_session)):
+    row = session.query(Series).filter(Series.id == series_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Series not found")
+    row.is_ignored = True
+    row.updated_at = datetime.utcnow()
     session.commit()
-    return {"id": entry.id, "is_read": True}
+    return {"id": row.id, "title": row.title, "is_ignored": True}
 
 
-@router.post("/api/series/{series_id}/unread")
-async def mark_series_unread(series_id: int, session: Session = Depends(_get_session)):
-    entry = session.query(Series).filter(Series.id == series_id).first()
-    if not entry:
-        raise HTTPException(status_code=404, detail="Series entry not found")
-    entry.is_read = False
-    entry.updated_at = datetime.utcnow()
+@router.post("/api/series/{series_id}/unignore")
+async def unignore_series(series_id: int, session: Session = Depends(_get_session)):
+    row = session.query(Series).filter(Series.id == series_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Series not found")
+    row.is_ignored = False
+    row.updated_at = datetime.utcnow()
     session.commit()
-    return {"id": entry.id, "is_read": False}
+    return {"id": row.id, "title": row.title, "is_ignored": False}
 
 
-@router.post("/api/series/ignore")
-async def ignore_series(
-    payload: dict = Body(...),
-    session: Session = Depends(_get_session),
-):
-    title = payload.get("title", "").strip()
-    if not title:
-        raise HTTPException(status_code=400, detail="title is required")
-    count = session.query(Series).filter(Series.title == title).update(
-        {"is_ignored": True, "updated_at": datetime.utcnow()}, synchronize_session=False
-    )
+@router.post("/api/series/episodes/{episode_id}/read")
+async def mark_episode_read(episode_id: int, session: Session = Depends(_get_session)):
+    ep = session.query(SeriesEpisode).filter(SeriesEpisode.id == episode_id).first()
+    if not ep:
+        raise HTTPException(status_code=404, detail="Episode not found")
+    ep.is_read = True
+    ep.updated_at = datetime.utcnow()
     session.commit()
-    return {"title": title, "is_ignored": True, "affected": count}
+    return {"id": ep.id, "is_read": True}
 
 
-@router.post("/api/series/unignore")
-async def unignore_series(
-    payload: dict = Body(...),
-    session: Session = Depends(_get_session),
-):
-    title = payload.get("title", "").strip()
-    if not title:
-        raise HTTPException(status_code=400, detail="title is required")
-    count = session.query(Series).filter(Series.title == title).update(
-        {"is_ignored": False, "updated_at": datetime.utcnow()}, synchronize_session=False
-    )
+@router.post("/api/series/episodes/{episode_id}/unread")
+async def mark_episode_unread(episode_id: int, session: Session = Depends(_get_session)):
+    ep = session.query(SeriesEpisode).filter(SeriesEpisode.id == episode_id).first()
+    if not ep:
+        raise HTTPException(status_code=404, detail="Episode not found")
+    ep.is_read = False
+    ep.updated_at = datetime.utcnow()
     session.commit()
-    return {"title": title, "is_ignored": False, "affected": count}
+    return {"id": ep.id, "is_read": False}
 
 
 @router.post("/api/movies/read-all")
@@ -294,7 +286,7 @@ async def mark_all_movies_read(session: Session = Depends(_get_session)):
 
 @router.post("/api/series/read-all")
 async def mark_all_series_read(session: Session = Depends(_get_session)):
-    count = session.query(Series).filter(Series.is_read == False).update(
+    count = session.query(SeriesEpisode).filter(SeriesEpisode.is_read == False).update(
         {"is_read": True, "updated_at": datetime.utcnow()}, synchronize_session=False
     )
     session.commit()

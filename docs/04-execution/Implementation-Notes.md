@@ -2,7 +2,7 @@
 
 ## Scope implemented
 
-All milestones M1–M6 are implemented and running in production. M7 (Series Ignored Feature) is in progress.
+All milestones M1–M7 are implemented and running in production.
 
 - **M1 — Ingestion:** CLI ingester, RSS fetch/parse, dedup, storage
 - **M2 — Enrichment:** On-demand OMDb enrichment via web UI; stores `imdb_id` for direct linking
@@ -15,7 +15,7 @@ All milestones M1–M6 are implemented and running in production. M7 (Series Ign
 ## Files touched
 
 ### src/common/ (shared components)
-- `src/common/models.py` — SQLAlchemy models: `Movie`, `FeedHealth`, `NewsItem`, `Filter`, `AIFilteredView`
+- `src/common/models.py` — SQLAlchemy models: `Movie`, `Series`, `SeriesEpisode`, `FeedHealth`, `NewsItem`, `Filter`, `AIFilteredView`
 - `src/common/db.py` — Database engine/session setup (MySQL + SQLite)
 - `src/common/config.py` — YAML config loading and validation
 
@@ -154,46 +154,45 @@ This script (idempotent — safe to re-run) applies:
 
 ---
 
-## M7 — Series Ignored Feature
+## M7 — Series Two-Table Split + Ignore
 
 ### Scope
-- `is_ignored` boolean column on `Series` model (default `False`); indexed
-- CLI Ingester: after dedup insert/merge, check if any existing episode for the same title has `is_ignored = True`; if so, set `is_ignored = True` on the new row
-- `GET /api/series?view=filtered|all|read` — single endpoint, three behaviours:
-  - `filtered` (default): `is_read = False AND is_ignored = False`
-  - `all`: `is_read = False` (ignored rows included)
-  - `read`: `is_read = True` (all read); result sorted with not-ignored series titles first
-- `POST /api/series/ignore` — body `{"title": "…"}`; bulk-update all rows for that title to `is_ignored = True`
-- `POST /api/series/unignore` — same shape; sets `is_ignored = False`
-- Series tab: three sub-tabs (Filtered / All / Read); Ignore/Unignore toggle button at series title level (h2 row); Mark All Read button present on Filtered and All sub-tabs only
-- `migrate_002_series_ignored.sh` — idempotent script adding `is_ignored BOOLEAN DEFAULT FALSE NOT NULL` column
+- `series` table: one row per unique title (PK = `series.id`, `title` UNIQUE, `imdb_id` nullable, `is_ignored` bool)
+- `series_episodes` table: one row per `(series_id, season, episode)`; FK → `series.id`; carries `qualities`, `feed_entry_date`, `ingested_at`, `is_read`
+- Two-level deduplication in ingester: upsert series title row first (`session.flush()` to get PK), then upsert episode row
+- `is_ignored` is a title-level flag on `series`; new episodes for an ignored series inherit via JOIN at query time — no per-episode flag needed
+- `GET /api/series?view=unread|all|ignored` — three views (ADR-012)
+- `POST /api/series/{series_id}/ignore` and `/unignore` — PK-based, O(1) single-row update
+- `POST /api/series/episodes/{episode_id}/read` and `/unread` — episode-level read tracking
+- `POST /api/series/read-all` — marks all `series_episodes.is_read`
+- Series tab: Unread / All / Ignored view switcher; Ignore/Unignore per series title; Mark All Read hidden on Ignored view
+- `clear_db.sh`: updated to detect old M6 single-table `series` schema, drop it, and call `init_db`; skips missing tables gracefully
 
-### Files to touch
-- `src/common/models.py` — add `is_ignored` mapped column + `ix_series_is_ignored` index to `Series`
-- `src/cli/dedup.py` — after upsert, check `is_ignored` propagation for new rows
-- `src/webui/routes.py` — update `get_series` with `view` param; add `ignore` and `unignore` endpoints
-- `src/webui/static/app.js` — sub-tabs, Ignore toggle button, updated state management
-- `migrate_002_series_ignored.sh` — new migration script
+### Files changed
+- `src/common/models.py` — replaced old `Series` model with `Series` (title-level) + `SeriesEpisode` (episode-level)
+- `src/cli/dedup.py` — rewrote `deduplicate_and_store_series` with two-level upsert
+- `src/webui/routes.py` — rewrote all series endpoints; added `quote_plus` import for IMDb URL construction
+- `src/webui/static/app.js` — updated `SeriesTab`: view names, API paths, ignore/unignore using series `id`
+- `clear_db.sh` — migration-aware clear script
 
-### Key decisions
-- `is_ignored` stored per-episode row (not a separate table) but always toggled title-wide; this keeps the schema simple while allowing the ingester to inherit the flag on new rows by querying existing episodes for the same title
-- Sorting in the `read` view: group by title, determine title-level `is_ignored` from any episode in the group, sort not-ignored titles first; within each title sort normally by season → episode
+### Key decisions (ADR-012)
+- `is_ignored` lives on `series` row (title level), not repeated on every episode; ignore/unignore is O(1)
+- New episodes for an ignored series automatically "inherit" ignored status at query time via JOIN — no flag to propagate at insert time
+- `imdb_url` now always returned in API response (search URL fallback when `imdb_id` is null, per ADR-010)
+- Migration path: `clear_db.sh` auto-detects old schema and drops it; `init_db` creates new tables
 
 ### Migration steps (M7)
-- Fresh DB: `create_all()` on startup adds `is_ignored` column automatically
-- Existing DB:
-  ```bash
-  bash migrate_002_series_ignored.sh
-  ```
-  This script (idempotent) runs:
-  ```sql
-  ALTER TABLE series ADD COLUMN is_ignored BOOLEAN NOT NULL DEFAULT FALSE;
-  ```
+Run `clear_db.sh` from the project root — it detects the old single-table schema and handles the migration automatically:
+```bash
+bash clear_db.sh
+python src/cli/main.py  # repopulate from live feed
+```
 
 ### How to test locally (M7)
-1. Open web app → Series tab — confirm three sub-tabs: Filtered, All, Read
-2. Filtered tab (default): confirm no ignored series appear
-3. Click "Ignore" on a series title — confirm it disappears from Filtered, appears in All
-4. Click "Unignore" — confirm it returns to Filtered
-5. Run ingester while a series is ignored — confirm new episodes for that title are stored with `is_ignored = true` and absent from Filtered
-6. Mark some episodes as read, then check Read tab — confirm not-ignored read series appear before ignored read series
+1. Run `bash clear_db.sh && python src/cli/main.py`
+2. Start web app → Series tab → Unread view (default) — confirm episodes grouped by title → season → episode
+3. Click "Ignore" on a series — confirm it disappears from Unread and All views, appears in Ignored view
+4. In Ignored view, click "Unignore" — confirm it moves back to Unread view
+5. Click "Mark Read" on an episode — confirm it disappears from Unread view
+6. Click "Mark All Read" — confirm Unread view empties; All view still shows episodes
+7. Run ingester again with an ignored series in DB — confirm new episodes do not appear in Unread or All views

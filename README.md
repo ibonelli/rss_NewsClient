@@ -75,3 +75,11 @@ http://127.0.0.1:8080/api/health
 http://127.0.0.1:8080/api/movies
 http://127.0.0.1:8080/api/series
 ```
+
+## Claude AI filtering
+
+After exporting from the UI you get json files which you can use with Claude command line using the following CLI command:
+
+```bash
+run_ai_filtering.sh
+```

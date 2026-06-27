@@ -9,7 +9,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-__all__ = ["Base", "Movie", "Series", "FeedHealth", "NewsItem", "Filter", "AIFilteredView"]
+__all__ = ["Base", "Movie", "Series", "SeriesEpisode", "FeedHealth", "NewsItem", "Filter", "AIFilteredView"]
 
 
 class Base(DeclarativeBase):
@@ -46,22 +46,34 @@ class Movie(Base):
 class Series(Base):
     __tablename__ = "series"
     __table_args__ = (
-        Index("ix_series_title_season_episode", "title", "season", "episode", unique=True),
-        Index("ix_series_title", "title"),
-        Index("ix_series_is_read", "is_read"),
+        Index("ix_series_title", "title", unique=True),
         Index("ix_series_is_ignored", "is_ignored"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    title: Mapped[str] = mapped_column(String(500), nullable=False, unique=True)
     imdb_id: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    is_ignored: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class SeriesEpisode(Base):
+    __tablename__ = "series_episodes"
+    __table_args__ = (
+        Index("ix_series_episodes_series_season_ep", "series_id", "season", "episode", unique=True),
+        Index("ix_series_episodes_series_id", "series_id"),
+        Index("ix_series_episodes_is_read", "is_read"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    series_id: Mapped[int] = mapped_column(Integer, ForeignKey("series.id"), nullable=False)
     season: Mapped[int] = mapped_column(Integer, nullable=False)
     episode: Mapped[int] = mapped_column(Integer, nullable=False)
     qualities: Mapped[str] = mapped_column(Text, nullable=False, default="[]")  # JSON: [{quality, torrent_page_url}]
     feed_entry_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     ingested_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    is_ignored: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
