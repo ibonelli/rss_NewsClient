@@ -189,14 +189,18 @@ bash clear_db.sh
 python src/cli/main.py  # repopulate from live feed
 ```
 
-### How to test locally (M7)
+### How to test locally (M7 + Series Two-Toggle)
 1. Run `bash clear_db.sh && python src/cli/main.py`
-2. Start web app → Series tab → Unread view (default) — confirm episodes grouped by title → season → episode
-3. Click "Ignore" on a series — confirm it disappears from Unread and All views, appears in Ignored view
-4. In Ignored view, click "Unignore" — confirm it moves back to Unread view
-5. Click "Mark Read" on an episode — confirm it disappears from Unread view
-6. Click "Mark All Read" — confirm Unread view empties; All view still shows episodes
-7. Run ingester again with an ignored series in DB — confirm new episodes do not appear in Unread or All views
+2. Start web app → Series tab → default is Unread + Not-Ignored — confirm episodes grouped by title → season → episode
+3. Click "Ignored" toggle — confirm view switches to ignored series (empty if none ignored yet)
+4. Click "Not-Ignored" toggle — confirm back to not-ignored unread episodes
+5. Click "Ignore" on a series — confirm it disappears from Not-Ignored view; switch to Ignored toggle to see it there
+6. In Ignored view, click "Unignore" — confirm it moves back; switch to Not-Ignored to see it
+7. Click "Read" toggle — confirm only read episodes appear; each row has "Mark Unread" button
+8. Click "Mark Unread" on an episode — confirm it disappears from Read view; appears in Unread view
+9. Back on Unread + Not-Ignored: click "Mark Read" on an episode — confirm it disappears from view
+10. Click "Mark All Read" — confirm only the visible group (Not-Ignored OR Ignored) episodes are cleared
+11. Run ingester again with an ignored series in DB — confirm new episodes do not appear in Not-Ignored views
 
 ---
 

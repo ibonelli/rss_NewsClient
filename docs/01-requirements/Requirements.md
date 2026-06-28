@@ -56,10 +56,11 @@
 - **FR-045:** The Series tab MUST group episodes by series title → season → episode. Each series title MUST link to its IMDb page (direct link if `imdb_id` is known; IMDb title-search URL otherwise). Each quality variant within an episode row MUST link to its torrent download page.
 - **FR-046:** The Series tab MUST provide per-episode read/unread tracking persisted in the `series_episodes` table, independent per episode.
 - **FR-047:** The system MUST send an email alert if the EZTV feed is unreachable for more than 24 hours (reusing existing alerter logic).
-- **FR-051:** The Series tab MUST provide an Ignore/Unignore toggle at the series title level. Ignored series MUST be hidden from the default (Unread) and All views.
-- **FR-052:** The Series tab MUST provide three views selectable by the user: **Unread** (default — non-ignored series with at least one unread episode), **All** (non-ignored series, all episodes regardless of read status), **Ignored** (only ignored series).
-- **FR-051:** The Series tab MUST provide a per-series "Ignore" toggle that prevents all episodes of that series from appearing in the default (Filtered) view. Ignored status MUST be persisted in the database and survive app restart.
-- **FR-052:** The Series tab MUST provide three sub-views: **Filtered** (default, unread AND not ignored), **All** (unread including ignored), and **Read** (all read entries, not-ignored first then ignored).
+- **FR-051:** The Series tab MUST provide an Ignore/Unignore toggle at the series title level. Setting `is_ignored = true` moves the series to the Ignored view; clearing it returns it to the Not-Ignored view. Ignored status MUST be persisted and survive app restart.
+- **FR-052:** The Series tab MUST provide two independent toggle buttons controlling the displayed episode list, without a page reload:
+  - **Unread/Read toggle** — Unread (default): episodes with `is_read=false`; Read: episodes with `is_read=true`
+  - **Not-Ignored/Ignored toggle** — Not-Ignored (default): non-ignored series; Ignored: ignored series
+  - Default on load: Unread + Not-Ignored. A series title appears only if it has at least one episode matching the read filter.
 - **FR-053:** When new episodes are ingested for a series whose existing episodes are marked ignored, the new episodes MUST inherit the ignored status automatically.
 - **FR-054:** The Ignore toggle MUST operate at the series title level — a single action sets or clears `is_ignored` on every episode row sharing that title.
 
@@ -87,7 +88,7 @@
 
 ### Mark All as Read
 - **FR-048:** The Movies tab MUST provide a "Mark All Read" button when the **Unread** toggle is active. It marks only the currently visible movies (respecting the current Flagged/Un-Flagged state) as read, and removes them from the view. The button MUST NOT appear when the Read toggle is active.
-- **FR-049:** The Series tab MUST provide a "Mark All Read" button that marks every unread `series_episodes` row as read and removes them from the Unread view in a single action.
+- **FR-049:** The Series tab MUST provide a "Mark All Read" button when the **Unread** toggle is active. It marks only the unread episodes of series in the currently visible Not-Ignored or Ignored group as read and removes them from the view. The button MUST NOT appear when the Read toggle is active.
 - **FR-050:** Every news feed view MUST provide a "Mark All Read" button that marks all `news_items` (and any `ai_filtered_views`) for that feed as read in a single action.
 
 ### Read Tracking
@@ -137,11 +138,9 @@
 - **AC-015:** Each series title in the UI links to its IMDb page (direct when `imdb_id` is known; search URL otherwise).
 - **AC-016:** Read-tracking per episode is persisted in `series_episodes` and survives app restart.
 - **AC-017:** An email alert fires if the EZTV feed is unreachable for > 24 hours.
-- **AC-018:** Ignoring a series hides it from the Unread and All views; it appears only in the Ignored view.
-- **AC-019:** New episodes ingested for an ignored series are not shown in the Unread or All views.
-- **AC-018:** Clicking "Ignore" on a series title removes it from the Filtered sub-view and keeps it visible in the All sub-view. Clicking "Unignore" reverses this.
-- **AC-019:** The Read sub-view lists all read series, with not-ignored titles sorted before ignored titles.
-- **AC-020:** Newly ingested episodes for an already-ignored series appear as ignored and are absent from the Filtered sub-view without any user action.
+- **AC-018:** Ignoring a series removes it from the Not-Ignored view; it appears only when the Ignored toggle is active.
+- **AC-019:** New episodes ingested for an ignored series do not appear in the Not-Ignored views — they are accessible only via the Ignored toggle.
+- **AC-020:** Switching the Unread/Read and Not-Ignored/Ignored toggles independently produces the correct filtered episode list without a page reload.
 
 ## 8) Open Questions
 - **Q-001:** Which free rating source is most reliable/complete for movies? (TMDb, OMDb free tier, imdbapi.dev, scraping?)

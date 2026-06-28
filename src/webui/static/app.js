@@ -645,31 +645,37 @@ function NewsTab() {
 // ---------------------------------------------------------------------------
 
 function SeriesTab() {
-    const [view, setView] = useState("unread");
+    const [isRead, setIsRead] = useState(false);
+    const [isIgnored, setIsIgnored] = useState(false);
     const [seriesList, setSeriesList] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [markingAll, setMarkingAll] = useState(false);
 
-    const loadSeries = (v) => {
+    const loadSeries = (read, ignored) => {
         setLoading(true);
         setError(null);
-        fetch(`/api/series?view=${v}`)
+        fetch(`/api/series?read=${read}&ignored=${ignored}`)
             .then(r => r.json())
             .then(data => { setSeriesList(data.series || []); setLoading(false); })
             .catch(() => { setError("Failed to load series"); setLoading(false); });
     };
 
-    useEffect(() => { loadSeries("unread"); }, []);
+    useEffect(() => { loadSeries(false, false); }, []);
 
-    const handleViewChange = (v) => {
-        if (v === view) return;
-        setView(v);
-        loadSeries(v);
+    const handleToggleRead = () => {
+        const next = !isRead;
+        setIsRead(next);
+        loadSeries(next, isIgnored);
     };
 
-    const handleMarkRead = (episodeId) => {
-        fetch(`/api/series/episodes/${episodeId}/read`, { method: "POST" });
+    const handleToggleIgnored = () => {
+        const next = !isIgnored;
+        setIsIgnored(next);
+        loadSeries(isRead, next);
+    };
+
+    const removeEpisodeFromView = (episodeId) => {
         setSeriesList(prev =>
             prev.map(s => ({
                 ...s,
@@ -681,10 +687,20 @@ function SeriesTab() {
         );
     };
 
+    const handleMarkRead = (episodeId) => {
+        fetch(`/api/series/episodes/${episodeId}/read`, { method: "POST" });
+        removeEpisodeFromView(episodeId);
+    };
+
+    const handleMarkUnread = (episodeId) => {
+        fetch(`/api/series/episodes/${episodeId}/unread`, { method: "POST" });
+        removeEpisodeFromView(episodeId);
+    };
+
     const handleMarkAllRead = async () => {
         setMarkingAll(true);
         try {
-            await fetch("/api/series/read-all", { method: "POST" });
+            await fetch(`/api/series/read-all?ignored=${isIgnored}`, { method: "POST" });
             setSeriesList([]);
         } catch (e) {
             console.error("Failed to mark all as read:", e);
@@ -709,15 +725,19 @@ function SeriesTab() {
         <div className="series-tab">
             <div className="movies-toolbar">
                 <div className="view-toggle">
-                    <button className=${`btn btn-sm ${view === "unread" ? "btn-active" : "btn-secondary"}`}
-                        onClick=${() => handleViewChange("unread")}>Unread</button>
-                    <button className=${`btn btn-sm ${view === "all" ? "btn-active" : "btn-secondary"}`}
-                        onClick=${() => handleViewChange("all")}>All</button>
-                    <button className=${`btn btn-sm ${view === "ignored" ? "btn-active" : "btn-secondary"}`}
-                        onClick=${() => handleViewChange("ignored")}>Ignored</button>
+                    <button className=${`btn btn-sm ${!isRead ? "btn-active" : "btn-secondary"}`}
+                        onClick=${() => !isRead || handleToggleRead()}>Unread</button>
+                    <button className=${`btn btn-sm ${isRead ? "btn-active" : "btn-secondary"}`}
+                        onClick=${() => isRead || handleToggleRead()}>Read</button>
+                </div>
+                <div className="view-toggle">
+                    <button className=${`btn btn-sm ${!isIgnored ? "btn-active" : "btn-secondary"}`}
+                        onClick=${() => !isIgnored || handleToggleIgnored()}>Not-Ignored</button>
+                    <button className=${`btn btn-sm ${isIgnored ? "btn-active" : "btn-secondary"}`}
+                        onClick=${() => isIgnored || handleToggleIgnored()}>Ignored</button>
                 </div>
                 <div className="tab-count">${seriesList.length} series</div>
-                ${view !== "ignored" && html`
+                ${!isRead && html`
                     <button className="btn btn-secondary btn-sm" onClick=${handleMarkAllRead} disabled=${markingAll}>
                         ${markingAll ? "..." : "Mark All Read"}
                     </button>
@@ -725,7 +745,7 @@ function SeriesTab() {
             </div>
             ${seriesList.length === 0
                 ? html`<div className="empty-state">
-                    ${view === "ignored"
+                    ${isIgnored
                         ? "No ignored series."
                         : html`<p>No series to display. Run the ingester first:</p><code>python src/cli/main.py</code>`}
                 </div>`
@@ -733,7 +753,7 @@ function SeriesTab() {
                     <div key=${series.id} className="series-block">
                         <h2 className="series-title">
                             <a href=${series.imdb_url} target="_blank" rel="noreferrer">${series.title}</a>
-                            ${view === "ignored"
+                            ${isIgnored
                                 ? html`<button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${() => handleUnignore(series.id)}>Unignore</button>`
                                 : html`<button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${() => handleIgnore(series.id)}>Ignore</button>`
                             }
@@ -755,9 +775,14 @@ function SeriesTab() {
                                             ${ep.feed_entry_date && html`
                                                 <span className="episode-date">${new Date(ep.feed_entry_date).toLocaleDateString()}</span>
                                             `}
-                                            ${view !== "ignored" && html`
+                                            ${!isRead && html`
                                                 <button className="btn btn-read btn-sm" onClick=${() => handleMarkRead(ep.id)}>
                                                     Mark Read
+                                                </button>
+                                            `}
+                                            ${isRead && html`
+                                                <button className="btn btn-secondary btn-sm" onClick=${() => handleMarkUnread(ep.id)}>
+                                                    Mark Unread
                                                 </button>
                                             `}
                                         </div>

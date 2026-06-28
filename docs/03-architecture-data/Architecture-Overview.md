@@ -67,7 +67,7 @@ src/
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/api/series` | Series grouped by title → season → episode; `view` param: `unread` (default) \| `all` \| `ignored` |
+| GET | `/api/series` | Series grouped by title → season → episode; `read` bool (default `false`) × `ignored` bool (default `false`) |
 | POST | `/api/series/{series_id}/ignore` | Set `is_ignored = true` on `series` row |
 | POST | `/api/series/{series_id}/unignore` | Set `is_ignored = false` on `series` row |
 | POST | `/api/series/episodes/{episode_id}/read` | Mark episode as read |

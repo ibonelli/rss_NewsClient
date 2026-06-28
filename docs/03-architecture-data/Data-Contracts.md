@@ -74,7 +74,7 @@ class Series(Base):
     id: int              # PK, auto-increment
     title: str           # NOT NULL, UNIQUE — normalized series name
     imdb_id: str | None  # nullable — e.g. "tt0903747"; not in EZTV feed, reserved for future use
-    is_ignored: bool     # default False — hides series from Unread and All views
+    is_ignored: bool     # default False — series appears in Not-Ignored view; true = Ignored view only
     created_at: datetime
     updated_at: datetime
 ```
@@ -524,14 +524,15 @@ On failure: same shape with all rating fields `null`, `imdb_id` `null`, and `enr
 ### GET `/api/series`
 
 Query params:
-- `view` (string, default `unread`) — `unread` | `all` | `ignored`
-  - `unread`: non-ignored series with ≥ 1 unread episode
-  - `all`: non-ignored series, all episodes regardless of read status
-  - `ignored`: only ignored series, all their episodes
+- `read` (bool, default `false`) — `false` = episodes with `is_read=false` (Unread); `true` = episodes with `is_read=true` (Read)
+- `ignored` (bool, default `false`) — `false` = non-ignored series (Not-Ignored); `true` = ignored series
+
+A series title appears in the response only if it has at least one episode matching the `read` filter.
 
 ```json
 {
-  "view": "unread",
+  "read": false,
+  "ignored": false,
   "series": [
     {
       "id": 1,
@@ -565,7 +566,7 @@ Query params:
 
 ### POST `/api/series/{series_id}/ignore` and `/api/series/{series_id}/unignore`
 
-Sets `is_ignored` on the `series` row identified by `series_id` (PK). Ignored series are excluded from `unread` and `all` views and appear only in the `ignored` view.
+Sets `is_ignored` on the `series` row identified by `series_id` (PK). Ignored series appear only when `ignored=true` is passed to `GET /api/series`.
 
 ```json
 { "id": 1, "title": "Breaking Bad", "is_ignored": true }
@@ -581,7 +582,10 @@ Sets `is_read` on a `series_episodes` row.
 
 ### POST `/api/series/read-all`
 
-Marks all unread `series_episodes` rows as read. Returns the count marked.
+Query params:
+- `ignored` (bool, default `false`) — scopes which unread episodes are marked read: `false` marks only episodes of non-ignored series; `true` marks only episodes of ignored series
+
+Only `is_read=false` episodes within the scoped series are affected.
 
 ```json
 { "marked_read": 22 }

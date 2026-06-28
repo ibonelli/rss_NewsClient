@@ -211,31 +211,18 @@ def _build_series_response(results: list) -> list[dict]:
 
 @router.get("/api/series")
 async def get_series(
-    view: str = Query(default="unread", pattern="^(unread|all|ignored)$"),
+    read: bool = Query(default=False),
+    ignored: bool = Query(default=False),
     session: Session = Depends(_get_session),
 ):
-    base = session.query(Series, SeriesEpisode).join(
-        SeriesEpisode, SeriesEpisode.series_id == Series.id
+    rows = (
+        session.query(Series, SeriesEpisode)
+        .join(SeriesEpisode, SeriesEpisode.series_id == Series.id)
+        .filter(Series.is_ignored == ignored, SeriesEpisode.is_read == read)
+        .order_by(Series.title, SeriesEpisode.season, SeriesEpisode.episode)
+        .all()
     )
-    if view == "unread":
-        rows = (
-            base.filter(Series.is_ignored == False, SeriesEpisode.is_read == False)
-            .order_by(Series.title, SeriesEpisode.season, SeriesEpisode.episode)
-            .all()
-        )
-    elif view == "all":
-        rows = (
-            base.filter(Series.is_ignored == False)
-            .order_by(Series.title, SeriesEpisode.season, SeriesEpisode.episode)
-            .all()
-        )
-    else:  # ignored
-        rows = (
-            base.filter(Series.is_ignored == True)
-            .order_by(Series.title, SeriesEpisode.season, SeriesEpisode.episode)
-            .all()
-        )
-    return {"view": view, "series": _build_series_response(rows)}
+    return {"read": read, "ignored": ignored, "series": _build_series_response(rows)}
 
 
 @router.post("/api/series/{series_id}/ignore")
@@ -307,10 +294,17 @@ async def mark_all_movies_read(
 
 
 @router.post("/api/series/read-all")
-async def mark_all_series_read(session: Session = Depends(_get_session)):
-    count = session.query(SeriesEpisode).filter(SeriesEpisode.is_read == False).update(
-        {"is_read": True, "updated_at": datetime.utcnow()}, synchronize_session=False
-    )
+async def mark_all_series_read(
+    session: Session = Depends(_get_session),
+    ignored: bool = Query(default=False),
+):
+    series_ids = [
+        s.id for s in session.query(Series).filter(Series.is_ignored == ignored).all()
+    ]
+    count = session.query(SeriesEpisode).filter(
+        SeriesEpisode.series_id.in_(series_ids),
+        SeriesEpisode.is_read == False,
+    ).update({"is_read": True, "updated_at": datetime.utcnow()}, synchronize_session=False)
     session.commit()
     return {"marked_read": count}
 

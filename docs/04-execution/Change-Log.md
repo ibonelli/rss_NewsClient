@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Added — Series Two-Toggle View (Unread/Read × Not-Ignored/Ignored)
+- `GET /api/series?read=false&ignored=false` — replaces old `?view=unread|all|ignored`; two independent bool params
+  - `read` (bool, default `false`): `false` = unread episodes, `true` = read episodes
+  - `ignored` (bool, default `false`): `false` = non-ignored series (Not-Ignored), `true` = ignored series
+  - "All" view removed — the Read + Not-Ignored combination covers its content
+- `POST /api/series/read-all?ignored=false|true` — scopes mark-all to the currently visible Not-Ignored or Ignored group only
+- Series tab: two independent toggle buttons — **Unread/Read** and **Not-Ignored/Ignored**; default Unread + Not-Ignored
+- Read view: per-episode "Mark Unread" button (mirrors Movie Read view)
+- Ignore button shows on Not-Ignored view; Unignore button shows on Ignored view
+- "Mark All Read" visible only when Unread toggle is active; scoped to the current Ignored state
+
 ### Added — M8: Movies Two-Toggle View
 - `GET /api/movies?read=false&flagged=true` — replaces old `?filtered=bool` and the M8-interim `?view=...`
   - `read` (bool, default `false`): `false` = unread movies, `true` = read movies
