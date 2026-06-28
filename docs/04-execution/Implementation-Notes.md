@@ -2,7 +2,7 @@
 
 ## Scope implemented
 
-M1–M8 are implemented and running in production. M9 is planned.
+All milestones M1–M9 are implemented and running in production.
 
 - **M1 — Ingestion:** CLI ingester, RSS fetch/parse, dedup, storage
 - **M2 — Enrichment:** On-demand OMDb enrichment via web UI; stores `imdb_id` for direct linking

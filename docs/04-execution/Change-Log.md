@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-### Planned — News Feed Simplification + Read/Unread Toggle
+### Added — M9: News Feed Simplification + Read/Unread Toggle
 - `GET /api/news/{feed}/items?read=false|true` — new `read` bool param (default `false`); UI shows only items matching the selected read state
 - Per-item "Mark Read" (Unread view) and "Mark Unread" (Read view) buttons remove the item from the current view immediately on click
 - "Mark All Read" button visible only when Unread toggle is active; marks all unread items for the feed

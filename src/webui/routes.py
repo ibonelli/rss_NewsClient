@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote_plus
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.orm import Session
 
@@ -385,10 +385,11 @@ async def get_news_feeds(
 @router.get("/api/news/{feed_name}/items")
 async def get_news_items(
     feed_name: str,
+    read: bool = Query(default=False),
     session: Session = Depends(_get_session),
     config: dict = Depends(_get_config),
 ):
-    """Return news items for a feed, shaped by feed type."""
+    """Return news items for a feed filtered by read state, shaped by feed type."""
     news_feeds = config.get("news_feeds", [])
     feed_cfg = next((f for f in news_feeds if f.get("name") == feed_name), None)
     if feed_cfg is None:
@@ -399,7 +400,7 @@ async def get_news_items(
     if feed_type == "unfiltered":
         rows = (
             session.query(NewsItem)
-            .filter(NewsItem.feed_name == feed_name)
+            .filter(NewsItem.feed_name == feed_name, NewsItem.is_read == read)
             .order_by(NewsItem.published_at.desc())
             .all()
         )
@@ -416,11 +417,14 @@ async def get_news_items(
         ]
 
     elif feed_type == "filtered":
-        # Load filter name lookup
         filters = {f.id: f.name for f in session.query(Filter).filter(Filter.feed_name == feed_name).all()}
         rows = (
             session.query(NewsItem)
-            .filter(NewsItem.feed_name == feed_name, NewsItem.matched_filter_id != None)
+            .filter(
+                NewsItem.feed_name == feed_name,
+                NewsItem.matched_filter_id != None,
+                NewsItem.is_read == read,
+            )
             .order_by(NewsItem.published_at.desc())
             .all()
         )
@@ -440,7 +444,7 @@ async def get_news_items(
     else:  # ai_filtered
         rows = (
             session.query(AIFilteredView)
-            .filter(AIFilteredView.feed_name == feed_name)
+            .filter(AIFilteredView.feed_name == feed_name, AIFilteredView.is_read == read)
             .order_by(AIFilteredView.published_at.desc())
             .all()
         )
@@ -455,54 +459,12 @@ async def get_news_items(
                 "summary": view.summary,
                 "tags": json.loads(view.tags) if view.tags else [],
                 "is_read": view.is_read,
-                "keep_as_context": view.keep_as_context,
                 "ingested_at": view.ingested_at.isoformat() if view.ingested_at else None,
             }
             for view in rows
         ]
 
-    return {"feed_name": feed_name, "type": feed_type, "items": items}
-
-
-@router.get("/api/news/{feed_name}/raw")
-async def get_news_raw(
-    feed_name: str,
-    session: Session = Depends(_get_session),
-    config: dict = Depends(_get_config),
-):
-    """Return raw news_items for an AI-filtered feed (FR-032 sub-view)."""
-    news_feeds = config.get("news_feeds", [])
-    feed_cfg = next((f for f in news_feeds if f.get("name") == feed_name), None)
-    if feed_cfg is None:
-        raise HTTPException(status_code=404, detail="Feed not found")
-    # Gather which source_item_ids have an ai_filtered_views row
-    view_ids = {
-        row.source_item_id
-        for row in session.query(AIFilteredView.source_item_id)
-        .filter(AIFilteredView.feed_name == feed_name)
-        .all()
-    }
-
-    rows = (
-        session.query(NewsItem)
-        .filter(NewsItem.feed_name == feed_name)
-        .order_by(NewsItem.published_at.desc())
-        .all()
-    )
-    items = [
-        {
-            "id": r.id,
-            "title": r.title,
-            "url": r.url,
-            "published_at": r.published_at.isoformat() if r.published_at else None,
-            "full_content": r.full_content,
-            "ingested_at": r.ingested_at.isoformat() if r.ingested_at else None,
-            "is_read": r.is_read,
-            "has_ai_view": r.id in view_ids,
-        }
-        for r in rows
-    ]
-    return {"feed_name": feed_name, "items": items}
+    return {"feed_name": feed_name, "type": feed_type, "read": read, "items": items}
 
 
 # ---------------------------------------------------------------------------
@@ -559,14 +521,6 @@ async def mark_ai_view_unread(view_id: int, session: Session = Depends(_get_sess
     return {"id": view.id, "is_read": False}
 
 
-@router.post("/api/news/views/{view_id}/keep")
-async def keep_ai_view(view_id: int, session: Session = Depends(_get_session)):
-    view = _get_ai_view(session, view_id)
-    view.keep_as_context = True
-    session.commit()
-    return {"id": view.id, "keep_as_context": True}
-
-
 @router.post("/api/news/{feed_name}/read-all")
 async def mark_all_news_read(
     feed_name: str,
@@ -584,16 +538,8 @@ async def mark_all_news_read(
     return {"ok": True}
 
 
-@router.post("/api/news/views/{view_id}/unkeep")
-async def unkeep_ai_view(view_id: int, session: Session = Depends(_get_session)):
-    view = _get_ai_view(session, view_id)
-    view.keep_as_context = False
-    session.commit()
-    return {"id": view.id, "keep_as_context": False}
-
-
 # ---------------------------------------------------------------------------
-# AI-filtered export / import (FR-033, FR-034)
+# News export (FR-033)
 # ---------------------------------------------------------------------------
 
 def _get_news_feed_cfg(feed_name: str, config: dict) -> dict:
@@ -610,18 +556,13 @@ async def export_feed(
     session: Session = Depends(_get_session),
     config: dict = Depends(_get_config),
 ):
-    """Return unread news_items + keep_as_context ai_filtered_views as a JSON download."""
+    """Return unread news_items as a JSON download (always exports unread regardless of UI toggle)."""
     _get_news_feed_cfg(feed_name, config)
 
     unread_rows = (
         session.query(NewsItem)
         .filter(NewsItem.feed_name == feed_name, NewsItem.is_read == False)
         .order_by(NewsItem.published_at.desc())
-        .all()
-    )
-    context_rows = (
-        session.query(AIFilteredView)
-        .filter(AIFilteredView.feed_name == feed_name, AIFilteredView.keep_as_context == True)
         .all()
     )
 
@@ -638,109 +579,12 @@ async def export_feed(
             }
             for r in unread_rows
         ],
-        "context_items": [
-            {
-                "source_item_id": v.source_item_id,
-                "title": v.title,
-                "url": v.url,
-                "published_at": v.published_at.isoformat() if v.published_at else None,
-                "category": v.category,
-                "summary": v.summary,
-                "tags": json.loads(v.tags) if v.tags else [],
-            }
-            for v in context_rows
-        ],
     }
 
-    logger.info(
-        "Export for '%s': %d unread items, %d context items",
-        feed_name, len(unread_rows), len(context_rows),
-    )
+    logger.info("Export for '%s': %d unread items", feed_name, len(unread_rows))
 
     safe_name = feed_name.replace(" ", "_").lower()
     return JSONResponse(
         content=payload,
         headers={"Content-Disposition": f'attachment; filename="{safe_name}-export.json"'},
     )
-
-
-@router.post("/api/news/{feed_name}/import")
-async def import_feed(
-    feed_name: str,
-    request: Request,
-    session: Session = Depends(_get_session),
-    config: dict = Depends(_get_config),
-):
-    """Replace all ai_filtered_views for the feed with the imported payload."""
-    _get_news_feed_cfg(feed_name, config)
-
-    try:
-        body = await request.json()
-    except Exception:
-        raise HTTPException(status_code=400, detail="Request body is not valid JSON")
-
-    views = body.get("views")
-    if not isinstance(views, list):
-        raise HTTPException(status_code=400, detail="Payload must have a 'views' array")
-
-    # Build lookup of valid source_item_ids for this feed
-    valid_ids = {
-        row.id
-        for row in session.query(NewsItem.id).filter(NewsItem.feed_name == feed_name).all()
-    }
-
-    now = datetime.utcnow()
-    persisted = 0
-    discarded = 0
-
-    # Replace all existing rows for this feed
-    session.query(AIFilteredView).filter(AIFilteredView.feed_name == feed_name).delete()
-
-    for row in views:
-        source_item_id = row.get("source_item_id")
-        title = (row.get("title") or "").strip()
-        url = (row.get("url") or "").strip()
-
-        if source_item_id not in valid_ids:
-            logger.warning("Import for '%s': unknown source_item_id %s — discarding", feed_name, source_item_id)
-            discarded += 1
-            continue
-        if not title or not url:
-            logger.warning("Import for '%s': missing title or url for source_item_id %s — discarding", feed_name, source_item_id)
-            discarded += 1
-            continue
-
-        category = (row.get("category") or "").strip()[:255] or None
-        summary = (row.get("summary") or "").strip() or None
-        tags = row.get("tags", [])
-        if not isinstance(tags, list):
-            tags = []
-
-        published_at = None
-        if row.get("published_at"):
-            try:
-                published_at = datetime.fromisoformat(row["published_at"].replace("Z", "+00:00"))
-            except (ValueError, AttributeError):
-                pass
-
-        session.add(AIFilteredView(
-            source_item_id=source_item_id,
-            feed_name=feed_name,
-            title=title,
-            url=url,
-            published_at=published_at,
-            category=category,
-            summary=summary,
-            tags=json.dumps(tags),
-            is_read=False,
-            keep_as_context=False,
-            ingested_at=now,
-        ))
-        persisted += 1
-
-    session.commit()
-    logger.info(
-        "Import for '%s': received %d rows, persisted %d, discarded %d",
-        feed_name, len(views), persisted, discarded,
-    )
-    return {"imported": persisted, "discarded": discarded}
