@@ -311,41 +311,6 @@ function NewsItemRow({ item, isReadView, onRemove }) {
     `;
 }
 
-function AIViewRow({ item, isReadView, onRemove }) {
-    const [loading, setLoading] = useState(false);
-
-    const handleClick = async () => {
-        setLoading(true);
-        const action = isReadView ? "unread" : "read";
-        try {
-            await fetch(`/api/news/views/${item.id}/${action}`, { method: "POST" });
-            onRemove(item.id);
-        } catch (e) {
-            console.error("Failed to toggle read:", e);
-        }
-        setLoading(false);
-    };
-
-    return html`
-        <div className="news-item ai-view-item">
-            <div className="news-item-header">
-                <a className="news-item-title" href=${item.url} target="_blank" rel="noreferrer">${item.title}</a>
-                ${item.category && html`<${Badge} className="category-badge">${item.category}</${Badge}>`}
-            </div>
-            ${item.published_at && html`<div className="news-item-date">${new Date(item.published_at).toLocaleString()}</div>`}
-            ${item.summary && html`<p className="ai-summary">${item.summary}</p>`}
-            ${item.tags && item.tags.length > 0 && html`
-                <div className="ai-tags">
-                    ${item.tags.map((t, i) => html`<${Badge} key=${i} className="tag-badge">#${t}</${Badge}>`)}
-                </div>
-            `}
-            <button className="btn btn-read btn-sm" onClick=${handleClick} disabled=${loading}>
-                ${loading ? "..." : isReadView ? "Mark Unread" : "Mark Read"}
-            </button>
-        </div>
-    `;
-}
-
 // ---------------------------------------------------------------------------
 // News feed views
 // ---------------------------------------------------------------------------
@@ -418,9 +383,6 @@ function FilteredFeedView({ feedName }) {
     return html`<${NewsFeedView} feedName=${feedName} emptyMessage="No matched items yet." RowComponent=${NewsItemRow} />`;
 }
 
-function AIFilteredFeedView({ feedName }) {
-    return html`<${NewsFeedView} feedName=${feedName} emptyMessage="No AI-filtered items yet. Export unread items and process externally." RowComponent=${AIViewRow} />`;
-}
 
 // ---------------------------------------------------------------------------
 // News tab — feed list + active feed view
@@ -471,7 +433,6 @@ function NewsTab() {
                     <div className="feed-type-label">${currentFeed.type}</div>
                     ${currentFeed.type === "unfiltered" && html`<${UnfilteredFeedView} key=${currentFeed.name} feedName=${currentFeed.name} />`}
                     ${currentFeed.type === "filtered" && html`<${FilteredFeedView} key=${currentFeed.name} feedName=${currentFeed.name} />`}
-                    ${currentFeed.type === "ai_filtered" && html`<${AIFilteredFeedView} key=${currentFeed.name} feedName=${currentFeed.name} />`}
                 </div>
             `}
         </div>

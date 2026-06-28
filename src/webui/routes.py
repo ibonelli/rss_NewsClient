@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from collections import defaultdict
 
-from src.common.models import AIFilteredView, FeedHealth, Filter, Movie, NewsItem, Series, SeriesEpisode
+from src.common.models import FeedHealth, Filter, Movie, NewsItem, Series, SeriesEpisode
 from src.webui.filters import filter_movies, group_by_year
 from src.webui.enrichment import enrich_movie
 
@@ -354,13 +354,7 @@ async def get_news_feeds(
         if not feed_name:
             continue
 
-        if feed_type == "ai_filtered":
-            unread = (
-                session.query(AIFilteredView)
-                .filter(AIFilteredView.feed_name == feed_name, AIFilteredView.is_read == False)
-                .count()
-            )
-        elif feed_type == "filtered":
+        if feed_type == "filtered":
             unread = (
                 session.query(NewsItem)
                 .filter(
@@ -441,28 +435,8 @@ async def get_news_items(
             for r in rows
         ]
 
-    else:  # ai_filtered
-        rows = (
-            session.query(AIFilteredView)
-            .filter(AIFilteredView.feed_name == feed_name, AIFilteredView.is_read == read)
-            .order_by(AIFilteredView.published_at.desc())
-            .all()
-        )
-        items = [
-            {
-                "id": view.id,
-                "source_item_id": view.source_item_id,
-                "title": view.title,
-                "url": view.url,
-                "published_at": view.published_at.isoformat() if view.published_at else None,
-                "category": view.category,
-                "summary": view.summary,
-                "tags": json.loads(view.tags) if view.tags else [],
-                "is_read": view.is_read,
-                "ingested_at": view.ingested_at.isoformat() if view.ingested_at else None,
-            }
-            for view in rows
-        ]
+    else:
+        raise HTTPException(status_code=422, detail=f"Unsupported feed type: {feed_type!r}")
 
     return {"feed_name": feed_name, "type": feed_type, "read": read, "items": items}
 
@@ -494,33 +468,6 @@ async def mark_news_item_unread(item_id: int, session: Session = Depends(_get_se
     return {"id": item.id, "is_read": False}
 
 
-# ---------------------------------------------------------------------------
-# News read tracking — ai_filtered_views
-# ---------------------------------------------------------------------------
-
-def _get_ai_view(session: Session, view_id: int) -> AIFilteredView:
-    view = session.query(AIFilteredView).filter(AIFilteredView.id == view_id).first()
-    if not view:
-        raise HTTPException(status_code=404, detail="AI filtered view not found")
-    return view
-
-
-@router.post("/api/news/views/{view_id}/read")
-async def mark_ai_view_read(view_id: int, session: Session = Depends(_get_session)):
-    view = _get_ai_view(session, view_id)
-    view.is_read = True
-    session.commit()
-    return {"id": view.id, "is_read": True}
-
-
-@router.post("/api/news/views/{view_id}/unread")
-async def mark_ai_view_unread(view_id: int, session: Session = Depends(_get_session)):
-    view = _get_ai_view(session, view_id)
-    view.is_read = False
-    session.commit()
-    return {"id": view.id, "is_read": False}
-
-
 @router.post("/api/news/{feed_name}/read-all")
 async def mark_all_news_read(
     feed_name: str,
@@ -530,9 +477,6 @@ async def mark_all_news_read(
     _get_news_feed_cfg(feed_name, config)
     session.query(NewsItem).filter(
         NewsItem.feed_name == feed_name, NewsItem.is_read == False
-    ).update({"is_read": True}, synchronize_session=False)
-    session.query(AIFilteredView).filter(
-        AIFilteredView.feed_name == feed_name, AIFilteredView.is_read == False
     ).update({"is_read": True}, synchronize_session=False)
     session.commit()
     return {"ok": True}

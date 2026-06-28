@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-### Planned — M10: Drop ai_filtered Feed Type
+### Added — M10: Drop ai_filtered Feed Type
 - Remove `ai_filtered` as a valid feed type from config, backend, and frontend
 - Feeds configured with `type: ai_filtered` will no longer be served or displayed
 - `ai_filtered_views` table retained in DB schema (no migration); no longer read or written

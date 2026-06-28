@@ -124,11 +124,8 @@ def main() -> None:
         if feed_type == "filtered":
             with SessionFactory() as session:
                 _run_regex_pass(session, feed_name, logger)
-        elif feed_type == "ai_filtered":
-            logger.info(
-                "Feed '%s' is ai_filtered — use the web UI Export/Import to process items",
-                feed_name,
-            )
+        elif feed_type not in ("filtered", "unfiltered"):
+            logger.warning("Feed '%s' has unknown type %r — skipping", feed_name, feed_type)
 
     logger.info("Filter processor run complete")
 
