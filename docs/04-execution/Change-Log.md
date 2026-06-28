@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-### Planned — M8: Movies Two-Toggle View
+### Added — M8: Movies Two-Toggle View
 - `GET /api/movies?read=false&flagged=true` — replaces old `?filtered=bool` and the M8-interim `?view=...`
   - `read` (bool, default `false`): `false` = unread movies, `true` = read movies
   - `flagged` (bool, default `true`): `true` = passes rating/genre filter ("Flagged"), `false` = fails filter ("Un-Flagged")

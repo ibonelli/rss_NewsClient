@@ -85,21 +85,21 @@ async def serve_index():
 async def get_movies(
     session: Session = Depends(_get_session),
     config: dict = Depends(_get_config),
-    view: str = Query(default="filtered", pattern="^(filtered|non_filtered|read_filtered|read_non_filtered)$"),
+    read: bool = Query(default=False),
+    flagged: bool = Query(default=True),
 ):
-    is_read_view = view in ("read_filtered", "read_non_filtered")
-    movies = session.query(Movie).filter(Movie.is_read == is_read_view).all()
+    movies = session.query(Movie).filter(Movie.is_read == read).all()
     movie_dicts = [_movie_to_dict(m) for m in movies]
 
-    filtered_dicts = filter_movies(movie_dicts, config)
-    if view in ("filtered", "read_filtered"):
-        result_dicts = filtered_dicts
+    flagged_dicts = filter_movies(movie_dicts, config)
+    if flagged:
+        result_dicts = flagged_dicts
     else:
-        filtered_ids = {m["id"] for m in filtered_dicts}
-        result_dicts = [m for m in movie_dicts if m["id"] not in filtered_ids]
+        flagged_ids = {m["id"] for m in flagged_dicts}
+        result_dicts = [m for m in movie_dicts if m["id"] not in flagged_ids]
 
     sections = group_by_year(result_dicts, config)
-    return {"view": view, "sections": sections, "total_count": sum(len(s["movies"]) for s in sections)}
+    return {"read": read, "flagged": flagged, "sections": sections, "total_count": sum(len(s["movies"]) for s in sections)}
 
 
 @router.post("/api/movies/{movie_id}/read")
@@ -283,10 +283,25 @@ async def mark_episode_unread(episode_id: int, session: Session = Depends(_get_s
 
 
 @router.post("/api/movies/read-all")
-async def mark_all_movies_read(session: Session = Depends(_get_session)):
-    count = session.query(Movie).filter(Movie.is_read == False).update(
-        {"is_read": True, "updated_at": datetime.utcnow()}, synchronize_session=False
-    )
+async def mark_all_movies_read(
+    session: Session = Depends(_get_session),
+    config: dict = Depends(_get_config),
+    flagged: bool = Query(default=True),
+):
+    unread_movies = session.query(Movie).filter(Movie.is_read == False).all()
+    movie_dicts = [_movie_to_dict(m) for m in unread_movies]
+    flagged_dicts = filter_movies(movie_dicts, config)
+    if flagged:
+        target_ids = {m["id"] for m in flagged_dicts}
+    else:
+        flagged_ids = {m["id"] for m in flagged_dicts}
+        target_ids = {m["id"] for m in movie_dicts if m["id"] not in flagged_ids}
+    count = 0
+    for movie in unread_movies:
+        if movie.id in target_ids:
+            movie.is_read = True
+            movie.updated_at = datetime.utcnow()
+            count += 1
     session.commit()
     return {"marked_read": count}
 
