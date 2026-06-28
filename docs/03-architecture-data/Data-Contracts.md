@@ -441,18 +441,18 @@ log: "Feed <name> import: received N rows, persisted P, discarded D" (NFR-006)
 ### GET `/api/movies`
 
 Query params:
-- `view` (string, default `filtered`) — one of:
-  - `filtered` — unread movies that pass the rating/genre filter (default)
-  - `non_filtered` — unread movies that fail the filter
-  - `read_filtered` — read movies that pass the filter
-  - `read_non_filtered` — read movies that fail the filter
+- `read` (bool, default `false`) — `false` = unread movies; `true` = read movies
+- `flagged` (bool, default `true`) — `true` = movies that pass the rating/genre filter ("Flagged"); `false` = movies that fail it ("Un-Flagged")
 
-Movies with no ratings (unenriched) always pass the filter and appear in `filtered` / `read_filtered`.
-The filter split is computed at query time from config; no `is_filtered` column is stored in the DB.
+Default (`read=false&flagged=true`): unread movies that pass the filter — same behaviour as the original Filtered view.
+
+Movies with no ratings (unenriched) always pass the filter and appear in the Flagged (`flagged=true`) results.
+The Flagged/Un-Flagged split is computed at query time from config thresholds; no `is_flagged` column is stored in the DB.
 
 ```json
 {
-  "view": "filtered",
+  "read": false,
+  "flagged": true,
   "sections": [
     {
       "year": 2026,
@@ -495,7 +495,10 @@ The filter split is computed at query time from config; no `is_filtered` column 
 
 ### POST `/api/movies/read-all`
 
-Marks all unread movies as read. Returns the count marked.
+Query params:
+- `flagged` (bool, default `true`) — scopes which unread movies are marked read: `true` marks only Flagged (filter-passing) unread movies; `false` marks only Un-Flagged (filter-failing) unread movies
+
+The Flagged/Un-Flagged split is computed at query time (same logic as `GET /api/movies`). Only unread (`is_read=false`) movies are ever affected.
 
 ```json
 { "marked_read": 30 }

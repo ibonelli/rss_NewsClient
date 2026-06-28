@@ -77,17 +77,16 @@
 - **FR-036:** The Import control MUST submit a local JSON file to `FR-034` and refresh the view on success.
 
 ### Web Application — Movie View Controls
-- **FR-037:** The Movies tab MUST provide four views selectable by the user without a page reload:
-  - **Filtered** (default) — unread movies that pass the rating/genre filter
-  - **Non-Filtered** — unread movies that fail the filter
-  - **Read (Filtered)** — read movies that pass the filter
-  - **Read (Non-Filtered)** — read movies that fail the filter
-- **FR-055:** Movies with no ratings (all null — not yet enriched) MUST appear in the **Filtered** and **Read (Filtered)** views. They pass the filter by default until enriched.
-- **FR-056:** Filter evaluation for all four views MUST use the same runtime logic and config thresholds as the current Filtered view — no `is_filtered` column is stored; the split is computed at query time.
+- **FR-037:** The Movies tab MUST provide two independent toggle buttons that combine to control the displayed movie list, without a page reload:
+  - **Read/Unread toggle** — switches between unread movies (default) and read movies
+  - **Flagged/Un-Flagged toggle** — switches between movies that pass the rating/genre filter ("Flagged", default) and movies that fail it ("Un-Flagged")
+  - The four combinations (Unread+Flagged, Unread+Un-Flagged, Read+Flagged, Read+Un-Flagged) cover all movie states. Default on load: Unread + Flagged.
+- **FR-055:** Movies with no ratings (all null — not yet enriched) MUST appear in the **Flagged** state. They pass the filter by default until enriched.
+- **FR-056:** The Flagged/Un-Flagged split MUST use the same runtime logic and config thresholds as the existing filter — no `is_flagged` column is stored; the split is computed at query time.
 - **FR-038:** IMDb and RT rating badges MUST be clickable links. For enriched movies (where `imdb_id` is known), the IMDb badge MUST link directly to `https://www.imdb.com/title/{imdb_id}/`. When `imdb_id` is not yet known, the badge MUST fall back to an IMDb title-search URL. RT badges MUST link to a Rotten Tomatoes search for the movie title. Badges with no rating (N/A) MUST NOT be links.
 
 ### Mark All as Read
-- **FR-048:** The Movies tab MUST provide a "Mark All Read" button on the **Filtered** and **Non-Filtered** views. It marks ALL unread movies (both filtered and non-filtered) as read in a single action and removes them from both unread views. The button MUST NOT appear on the Read (Filtered) or Read (Non-Filtered) views.
+- **FR-048:** The Movies tab MUST provide a "Mark All Read" button when the **Unread** toggle is active. It marks only the currently visible movies (respecting the current Flagged/Un-Flagged state) as read, and removes them from the view. The button MUST NOT appear when the Read toggle is active.
 - **FR-049:** The Series tab MUST provide a "Mark All Read" button that marks every unread `series_episodes` row as read and removes them from the Unread view in a single action.
 - **FR-050:** Every news feed view MUST provide a "Mark All Read" button that marks all `news_items` (and any `ai_filtered_views`) for that feed as read in a single action.
 
@@ -122,9 +121,9 @@
 
 ## 7) Acceptance Criteria
 - **AC-001:** Running the scheduler for 24h produces at least one successful fetch and stores data in the database.
-- **AC-002:** The Movies tab shows four views: Filtered (unread, passes filter), Non-Filtered (unread, fails filter), Read (Filtered), Read (Non-Filtered). Each is grouped by year and genre priority. Switching views does not reload the page.
-- **AC-003:** Changing the filter config causes a movie to appear in a different view (e.g., a movie that was in Filtered may move to Non-Filtered after raising a threshold).
-- **AC-004:** Marking a movie as read removes it from the Filtered or Non-Filtered view; it appears in the corresponding Read view.
+- **AC-002:** The Movies tab shows two independent toggles (Read/Unread and Flagged/Un-Flagged). All four combinations work correctly, each grouped by year and genre priority, without page reload.
+- **AC-003:** Changing the filter config and reloading moves a movie between Flagged and Un-Flagged without any DB change.
+- **AC-004:** Marking a movie as read removes it from the Unread view; switching to the Read toggle shows it in the correct Flagged/Un-Flagged group.
 - **AC-005:** Simulating feed downtime >24h triggers an email alert.
 - **AC-006:** Movies have enriched ratings from at least one external source.
 - **AC-007:** Unfiltered news feeds store all fetched items; read/unread status survives app restart.

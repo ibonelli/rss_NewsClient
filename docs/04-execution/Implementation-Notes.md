@@ -11,7 +11,7 @@ All milestones M1–M7 are implemented and running in production. M8 is planned.
 - **M5 — News Feeds + Filter Processor:** News ingestion (all types); CLI Filter Processor (regex only); News tab in web UI; export/import for AI-filtered feeds
 - **M6 — Series Feed:** EZTV ingestion; Series tab with read-tracking; feed health + alerting
 - **M7 — Series Two-Table Split + Ignore:** Split `series` into `series` (title-level) + `series_episodes` (episode-level); `is_ignored` on `series` row; three Series views (Unread/All/Ignored); Ignore toggle at series title level; ingester inherits ignored status on new episodes
-- **M8 — Movies Four-View Layout:** Replace Filtered/All toggle with four views (Filtered, Non-Filtered, Read (Filtered), Read (Non-Filtered))
+- **M8 — Movies Two-Toggle View:** Replace Filtered/All toggle with two independent toggles — Read/Unread and Flagged/Un-Flagged
 
 ## Files touched
 
@@ -200,36 +200,35 @@ python src/cli/main.py  # repopulate from live feed
 
 ---
 
-## M8 — Movies Four-View Layout
+## M8 — Movies Two-Toggle View
 
 ### Scope
-- Replace the `filtered=bool` query param on `GET /api/movies` with `view=filtered|non_filtered|read_filtered|read_non_filtered`
-- No schema change — the split between filtered and non-filtered is computed at runtime using the existing `filter_movies()` logic from `filters.py`; no `is_filtered` column is added to the `movies` table
-- Four view behaviours:
-  - `filtered` (default): `is_read=False`, passes `filter_movies()`
-  - `non_filtered`: `is_read=False`, fails `filter_movies()`
-  - `read_filtered`: `is_read=True`, passes `filter_movies()`
-  - `read_non_filtered`: `is_read=True`, fails `filter_movies()`
-- Unenriched movies (all ratings null) always pass the filter → appear in `filtered` / `read_filtered`
-- `POST /api/movies/read-all` unchanged — marks all `movies.is_read=False` rows regardless of filter result
-- Movies tab: four view buttons in the toolbar (Filtered / Non-Filtered / Read (Filtered) / Read (Non-Filtered))
-- "Mark All Read" button shown only on Filtered and Non-Filtered views
+- Replace the `view=...` param on `GET /api/movies` with two independent bool params: `read` (default `false`) and `flagged` (default `true`)
+- `POST /api/movies/read-all` gains a `flagged` bool param — scopes which unread movies are marked read to the currently visible Flagged or Un-Flagged set
+- No schema change — the Flagged/Un-Flagged split is computed at runtime via existing `filter_movies()` logic; no `is_flagged` column added
+- Movies tab: two independent toggle buttons in the toolbar:
+  - **Unread / Read** — toggles `read` param (default: Unread)
+  - **Flagged / Un-Flagged** — toggles `flagged` param (default: Flagged)
+- "Mark All Read" button shown only when Unread is active; calls `POST /api/movies/read-all?flagged={current}`
+- Terminology: "Flagged" replaces "Filtered"; "Un-Flagged" replaces "Non-Filtered"
 
 ### Files to touch
-- `src/webui/routes.py` — update `get_movies()`: accept `view` param (replacing `filtered` bool); for non-filtered views fetch all movies of the relevant read state, apply `filter_movies()`, then return the complement for non-filtered views
-- `src/webui/static/app.js` — update `MoviesTab`: replace two-button toggle with four-button view switcher; update fetch URL; update "Mark All Read" visibility
+- `src/webui/routes.py` — update `get_movies()`: replace `view` param with `read: bool` + `flagged: bool`; update `mark_all_movies_read()` to accept `flagged: bool` and scope the DB update accordingly
+- `src/webui/static/app.js` — update `MoviesTab`: replace four-button toggle with two independent toggle buttons; update fetch URL; update "Mark All Read" call to pass `flagged` param
 
 ### Key decisions
-- No `is_filtered` column stored — filter thresholds are config-driven and change over time; storing the result would create stale data on every config edit
-- "Mark All Read" marks ALL unread movies (not just the current view's subset) — avoids needing to pass movie IDs or filter context to the endpoint
-- The Non-Filtered view uses the complement of `filter_movies()` output on the same movie set, keeping a single source of filter truth
+- Two independent bools (`read`, `flagged`) instead of a single `view` enum — cleaner for combinable toggles and independently queryable
+- "Mark All Read" scoped to current Flagged/Un-Flagged state — user can clear only the visible pile without affecting the other group
+- No `is_flagged` column stored — thresholds are config-driven and change over time; storing the result would create stale data on every config edit
+- Flagged/Un-Flagged computed as: fetch all movies for the given `read` state → run `filter_movies()` → return matching set (Flagged) or complement (Un-Flagged)
 
 ### How to test locally (M8)
-1. Open Movies tab — confirm "Filtered" is the default view, movies grouped by year
-2. Click "Non-Filtered" — confirm only movies that fail the rating/genre filter appear
-3. Click "Read (Filtered)" — confirm only read movies that pass the filter appear
-4. Click "Read (Non-Filtered)" — confirm only read movies that fail the filter appear
-5. From Filtered view, mark a movie as read — confirm it disappears from Filtered and appears in Read (Filtered)
-6. Click "Mark All Read" on Filtered view — confirm all unread movies disappear from both Filtered and Non-Filtered
-7. Verify "Mark All Read" button does not appear on Read (Filtered) or Read (Non-Filtered) views
-8. Change a rating threshold in config.yaml and reload — confirm a movie moves between Filtered and Non-Filtered without any DB change
+1. Open Movies tab — confirm default is Unread + Flagged, movies grouped by year
+2. Click "Un-Flagged" toggle — confirm only unread movies that fail the rating/genre filter appear
+3. Click "Read" toggle (while on Flagged) — confirm only read movies that pass the filter appear
+4. Click "Un-Flagged" toggle (while on Read) — confirm only read movies that fail the filter appear
+5. From Unread + Flagged, mark a movie as read — confirm it disappears; switch to Read + Flagged to see it there
+6. Click "Mark All Read" on Unread + Flagged — confirm only Flagged unread movies disappear; Un-Flagged unread movies remain
+7. Click "Mark All Read" on Unread + Un-Flagged — confirm only Un-Flagged unread movies disappear
+8. Verify "Mark All Read" does not appear when Read toggle is active
+9. Change a rating threshold in config.yaml and reload — confirm a movie moves between Flagged and Un-Flagged without any DB change
