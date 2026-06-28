@@ -116,7 +116,7 @@ function HealthBanner() {
 // Movies tab
 // ---------------------------------------------------------------------------
 
-function MovieCard({ movie, onMarkRead, onEnrich }) {
+function MovieCard({ movie, onMarkRead, onMarkUnread, onEnrich }) {
     const [loading, setLoading] = useState(false);
     const [enriching, setEnriching] = useState(false);
 
@@ -127,6 +127,17 @@ function MovieCard({ movie, onMarkRead, onEnrich }) {
             onMarkRead(movie.id);
         } catch (e) {
             console.error("Failed to mark as read:", e);
+        }
+        setLoading(false);
+    };
+
+    const handleMarkUnread = async () => {
+        setLoading(true);
+        try {
+            await fetch(`/api/movies/${movie.id}/unread`, { method: "POST" });
+            onMarkUnread(movie.id);
+        } catch (e) {
+            console.error("Failed to mark as unread:", e);
         }
         setLoading(false);
     };
@@ -174,9 +185,16 @@ function MovieCard({ movie, onMarkRead, onEnrich }) {
                 </div>
                 ${movie.enrichment_error && html`<p className="enrichment-error">${movie.enrichment_error}</p>`}
                 <div className="movie-actions">
-                    <button className="btn btn-read" onClick=${handleMarkRead} disabled=${loading}>
-                        ${loading ? "..." : "Mark as Read"}
-                    </button>
+                    ${onMarkRead && html`
+                        <button className="btn btn-read" onClick=${handleMarkRead} disabled=${loading}>
+                            ${loading ? "..." : "Mark as Read"}
+                        </button>
+                    `}
+                    ${onMarkUnread && html`
+                        <button className="btn btn-secondary btn-sm" onClick=${handleMarkUnread} disabled=${loading}>
+                            ${loading ? "..." : "Mark as Unread"}
+                        </button>
+                    `}
                     <button className="btn btn-enrich" onClick=${handleEnrich} disabled=${enriching}>
                         ${enriching ? "Loading..." : "Refresh Ratings"}
                     </button>
@@ -186,31 +204,38 @@ function MovieCard({ movie, onMarkRead, onEnrich }) {
     `;
 }
 
+const MOVIE_VIEWS = [
+    { key: "filtered",         label: "Filtered" },
+    { key: "non_filtered",     label: "Non-Filtered" },
+    { key: "read_filtered",    label: "Read (Filtered)" },
+    { key: "read_non_filtered", label: "Read (Non-Filtered)" },
+];
+
 function MoviesTab() {
     const [sections, setSections] = useState([]);
     const [totalCount, setTotalCount] = useState(0);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const [isFiltered, setIsFiltered] = useState(true);
+    const [view, setView] = useState("filtered");
     const [markingAll, setMarkingAll] = useState(false);
 
-    const fetchMovies = (filtered) => {
+    const fetchMovies = (v) => {
         setLoading(true);
-        fetch(`/api/movies?filtered=${filtered}`)
+        fetch(`/api/movies?view=${v}`)
             .then(r => r.json())
             .then(data => { setSections(data.sections); setTotalCount(data.total_count); setLoading(false); })
             .catch(() => { setError("Failed to load movies"); setLoading(false); });
     };
 
-    useEffect(() => fetchMovies(isFiltered), []);
+    useEffect(() => fetchMovies("filtered"), []);
 
-    const handleToggleView = (filtered) => {
-        if (filtered === isFiltered) return;
-        setIsFiltered(filtered);
-        fetchMovies(filtered);
+    const handleViewChange = (v) => {
+        if (v === view) return;
+        setView(v);
+        fetchMovies(v);
     };
 
-    const handleMarkRead = (movieId) => {
+    const removeFromView = (movieId) => {
         setSections(prev =>
             prev.map(s => ({ ...s, movies: s.movies.filter(m => m.id !== movieId) }))
                 .filter(s => s.movies.length > 0)
@@ -236,35 +261,45 @@ function MoviesTab() {
         );
     };
 
+    const isReadView = view === "read_filtered" || view === "read_non_filtered";
+
     if (error) return html`<div className="error">${error}</div>`;
 
     return html`
         <div>
             <div className="movies-toolbar">
                 <div className="view-toggle">
-                    <button className=${`btn btn-sm ${isFiltered ? "btn-active" : "btn-secondary"}`}
-                        onClick=${() => handleToggleView(true)}>Filtered</button>
-                    <button className=${`btn btn-sm ${!isFiltered ? "btn-active" : "btn-secondary"}`}
-                        onClick=${() => handleToggleView(false)}>All</button>
+                    ${MOVIE_VIEWS.map(v => html`
+                        <button key=${v.key}
+                            className=${`btn btn-sm ${view === v.key ? "btn-active" : "btn-secondary"}`}
+                            onClick=${() => handleViewChange(v.key)}>
+                            ${v.label}
+                        </button>
+                    `)}
                 </div>
                 <div className="tab-count">${totalCount} movies</div>
-                <button className="btn btn-secondary btn-sm" onClick=${handleMarkAllRead} disabled=${markingAll}>
-                    ${markingAll ? "..." : "Mark All Read"}
-                </button>
+                ${!isReadView && html`
+                    <button className="btn btn-secondary btn-sm" onClick=${handleMarkAllRead} disabled=${markingAll}>
+                        ${markingAll ? "..." : "Mark All Read"}
+                    </button>
+                `}
             </div>
             ${loading
                 ? html`<div className="loading">Loading movies...</div>`
                 : sections.length === 0
                     ? html`<div className="empty-state">
-                        <p>No movies to display. Run the ingester first:</p>
-                        <code>python src/cli/main.py</code>
+                        <p>${isReadView ? "No read movies in this view." : "No movies to display. Run the ingester first:"}</p>
+                        ${!isReadView && html`<code>python src/cli/main.py</code>`}
                     </div>`
                     : sections.map((section, i) => html`
                         <section key=${i} className="year-section">
                             <h2 className="year-header">${section.label}</h2>
                             <div className="movie-grid">
                                 ${section.movies.map(movie => html`
-                                    <${MovieCard} key=${movie.id} movie=${movie} onMarkRead=${handleMarkRead} onEnrich=${handleEnrich} />
+                                    <${MovieCard} key=${movie.id} movie=${movie}
+                                        onMarkRead=${!isReadView ? removeFromView : undefined}
+                                        onMarkUnread=${isReadView ? removeFromView : undefined}
+                                        onEnrich=${handleEnrich} />
                                 `)}
                             </div>
                         </section>

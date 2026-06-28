@@ -56,7 +56,7 @@ src/
 | Method | Path | Description |
 |---|---|---|
 | GET | `/` | Serve static React frontend (`index.html`) |
-| GET | `/api/movies` | Filtered movie list grouped by year and genre priority |
+| GET | `/api/movies` | Movie list grouped by year; `view` param: `filtered` (default) \| `non_filtered` \| `read_filtered` \| `read_non_filtered` |
 | POST | `/api/movies/{id}/read` | Mark movie as read |
 | POST | `/api/movies/{id}/unread` | Mark movie as unread |
 | POST | `/api/movies/{id}/enrich` | Trigger on-demand rating enrichment |

@@ -77,11 +77,17 @@
 - **FR-036:** The Import control MUST submit a local JSON file to `FR-034` and refresh the view on success.
 
 ### Web Application — Movie View Controls
-- **FR-037:** The movie view MUST provide a Filtered / All toggle that switches between the rating-filtered view and the complete unread-movie list without a page reload.
+- **FR-037:** The Movies tab MUST provide four views selectable by the user without a page reload:
+  - **Filtered** (default) — unread movies that pass the rating/genre filter
+  - **Non-Filtered** — unread movies that fail the filter
+  - **Read (Filtered)** — read movies that pass the filter
+  - **Read (Non-Filtered)** — read movies that fail the filter
+- **FR-055:** Movies with no ratings (all null — not yet enriched) MUST appear in the **Filtered** and **Read (Filtered)** views. They pass the filter by default until enriched.
+- **FR-056:** Filter evaluation for all four views MUST use the same runtime logic and config thresholds as the current Filtered view — no `is_filtered` column is stored; the split is computed at query time.
 - **FR-038:** IMDb and RT rating badges MUST be clickable links. For enriched movies (where `imdb_id` is known), the IMDb badge MUST link directly to `https://www.imdb.com/title/{imdb_id}/`. When `imdb_id` is not yet known, the badge MUST fall back to an IMDb title-search URL. RT badges MUST link to a Rotten Tomatoes search for the movie title. Badges with no rating (N/A) MUST NOT be links.
 
 ### Mark All as Read
-- **FR-048:** The Movies tab MUST provide a "Mark All Read" button that marks every currently listed unread movie as read and removes them from the view in a single action.
+- **FR-048:** The Movies tab MUST provide a "Mark All Read" button on the **Filtered** and **Non-Filtered** views. It marks ALL unread movies (both filtered and non-filtered) as read in a single action and removes them from both unread views. The button MUST NOT appear on the Read (Filtered) or Read (Non-Filtered) views.
 - **FR-049:** The Series tab MUST provide a "Mark All Read" button that marks every unread `series_episodes` row as read and removes them from the Unread view in a single action.
 - **FR-050:** Every news feed view MUST provide a "Mark All Read" button that marks all `news_items` (and any `ai_filtered_views`) for that feed as read in a single action.
 
@@ -116,9 +122,9 @@
 
 ## 7) Acceptance Criteria
 - **AC-001:** Running the scheduler for 24h produces at least one successful fetch and stores data in the database.
-- **AC-002:** Report HTML contains movies grouped by name, sectioned by year, ordered by genre priority.
-- **AC-003:** Changing filter config and regenerating report produces different output.
-- **AC-004:** Marking a movie as read and regenerating excludes it from the report.
+- **AC-002:** The Movies tab shows four views: Filtered (unread, passes filter), Non-Filtered (unread, fails filter), Read (Filtered), Read (Non-Filtered). Each is grouped by year and genre priority. Switching views does not reload the page.
+- **AC-003:** Changing the filter config causes a movie to appear in a different view (e.g., a movie that was in Filtered may move to Non-Filtered after raising a threshold).
+- **AC-004:** Marking a movie as read removes it from the Filtered or Non-Filtered view; it appears in the corresponding Read view.
 - **AC-005:** Simulating feed downtime >24h triggers an email alert.
 - **AC-006:** Movies have enriched ratings from at least one external source.
 - **AC-007:** Unfiltered news feeds store all fetched items; read/unread status survives app restart.

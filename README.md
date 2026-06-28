@@ -83,3 +83,10 @@ After exporting from the UI you get json files which you can use with Claude com
 ```bash
 run_ai_filtering.sh
 ```
+
+## Clean Up DB to restart
+
+```sql
+DROP DATABASE pelis_feed;
+CREATE DATABASE pelis_feed CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+```

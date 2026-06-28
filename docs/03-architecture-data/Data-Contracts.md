@@ -441,10 +441,18 @@ log: "Feed <name> import: received N rows, persisted P, discarded D" (NFR-006)
 ### GET `/api/movies`
 
 Query params:
-- `filtered` (bool, default `true`) — when `false`, rating/genre filters are skipped and all unread movies are returned
+- `view` (string, default `filtered`) — one of:
+  - `filtered` — unread movies that pass the rating/genre filter (default)
+  - `non_filtered` — unread movies that fail the filter
+  - `read_filtered` — read movies that pass the filter
+  - `read_non_filtered` — read movies that fail the filter
+
+Movies with no ratings (unenriched) always pass the filter and appear in `filtered` / `read_filtered`.
+The filter split is computed at query time from config; no `is_filtered` column is stored in the DB.
 
 ```json
 {
+  "view": "filtered",
   "sections": [
     {
       "year": 2026,

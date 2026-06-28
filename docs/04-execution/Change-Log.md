@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Planned — M8: Movies Four-View Layout
+- `GET /api/movies?view=filtered|non_filtered|read_filtered|read_non_filtered` — replaces old `?filtered=bool`
+  - `filtered` (default): unread, passes rating/genre filter
+  - `non_filtered`: unread, fails filter
+  - `read_filtered`: read, passes filter
+  - `read_non_filtered`: read, fails filter
+- No schema change — filter split computed at runtime from config thresholds (no `is_filtered` column)
+- Unenriched movies (null ratings) appear in `filtered` / `read_filtered` (pass-by-default behaviour preserved)
+- Movies tab: four view buttons (Filtered / Non-Filtered / Read (Filtered) / Read (Non-Filtered))
+- "Mark All Read" button visible only on Filtered and Non-Filtered views; marks ALL unread movies (both views) at once
+- `POST /api/movies/read-all` unchanged — still marks all unread regardless of filter result
+
 ### Added — M7: Series Two-Table Split + Ignore
 - `series` table: one row per unique title (`title` UNIQUE, `imdb_id` nullable, `is_ignored` bool)
 - `series_episodes` table: one row per `(series_id, season, episode)`; FK → `series.id`; carries `qualities`, `feed_entry_date`, `ingested_at`, `is_read`

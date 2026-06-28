@@ -85,14 +85,21 @@ async def serve_index():
 async def get_movies(
     session: Session = Depends(_get_session),
     config: dict = Depends(_get_config),
-    filtered: bool = Query(default=True),
+    view: str = Query(default="filtered", pattern="^(filtered|non_filtered|read_filtered|read_non_filtered)$"),
 ):
-    movies = session.query(Movie).filter(Movie.is_read == False).all()
+    is_read_view = view in ("read_filtered", "read_non_filtered")
+    movies = session.query(Movie).filter(Movie.is_read == is_read_view).all()
     movie_dicts = [_movie_to_dict(m) for m in movies]
-    if filtered:
-        movie_dicts = filter_movies(movie_dicts, config)
-    sections = group_by_year(movie_dicts, config)
-    return {"sections": sections, "total_count": sum(len(s["movies"]) for s in sections)}
+
+    filtered_dicts = filter_movies(movie_dicts, config)
+    if view in ("filtered", "read_filtered"):
+        result_dicts = filtered_dicts
+    else:
+        filtered_ids = {m["id"] for m in filtered_dicts}
+        result_dicts = [m for m in movie_dicts if m["id"] not in filtered_ids]
+
+    sections = group_by_year(result_dicts, config)
+    return {"view": view, "sections": sections, "total_count": sum(len(s["movies"]) for s in sections)}
 
 
 @router.post("/api/movies/{movie_id}/read")
