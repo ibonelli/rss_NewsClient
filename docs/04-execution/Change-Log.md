@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Planned — M10: Drop ai_filtered Feed Type
+- Remove `ai_filtered` as a valid feed type from config, backend, and frontend
+- Feeds configured with `type: ai_filtered` will no longer be served or displayed
+- `ai_filtered_views` table retained in DB schema (no migration); no longer read or written
+- Remove `POST /api/news/views/{id}/read` and `/unread` endpoints
+- Remove `AIFilteredView` from routes, imports, and frontend (`AIViewRow`, `AIFilteredFeedView`)
+- `config.yaml.example` updated to document only `unfiltered` and `filtered` types
+- `GET /api/news` no longer counts unread from `ai_filtered_views`
+- `POST /api/news/{feed}/read-all` no longer marks `ai_filtered_views` rows
+
 ### Added — M9: News Feed Simplification + Read/Unread Toggle
 - `GET /api/news/{feed}/items?read=false|true` — new `read` bool param (default `false`); UI shows only items matching the selected read state
 - Per-item "Mark Read" (Unread view) and "Mark Unread" (Read view) buttons remove the item from the current view immediately on click

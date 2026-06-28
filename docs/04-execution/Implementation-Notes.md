@@ -2,7 +2,7 @@
 
 ## Scope implemented
 
-All milestones M1–M9 are implemented and running in production.
+Milestones M1–M9 are implemented and running in production. M10 is planned.
 
 - **M1 — Ingestion:** CLI ingester, RSS fetch/parse, dedup, storage
 - **M2 — Enrichment:** On-demand OMDb enrichment via web UI; stores `imdb_id` for direct linking
@@ -13,11 +13,12 @@ All milestones M1–M9 are implemented and running in production.
 - **M7 — Series Two-Table Split + Ignore:** Split `series` into `series` (title-level) + `series_episodes` (episode-level); `is_ignored` on `series` row; two-toggle view (Unread/Read × Not-Ignored/Ignored); Ignore toggle at series title level
 - **M8 — Movies Two-Toggle View:** Replace Filtered/All toggle with two independent toggles — Read/Unread and Flagged/Un-Flagged
 - **M9 — News Feed Simplification + Read/Unread Toggle:** Remove Import, raw sub-view, and Keep as Context; add Read/Unread toggle to all news feed types
+- **M10 — Drop ai_filtered Feed Type:** Remove `ai_filtered` feed type entirely from config, backend routes, and frontend; `ai_filtered_views` table stays in DB as dead weight
 
 ## Files touched
 
 ### src/common/ (shared components)
-- `src/common/models.py` — SQLAlchemy models: `Movie`, `Series`, `SeriesEpisode`, `FeedHealth`, `NewsItem`, `Filter`, `AIFilteredView`
+- `src/common/models.py` — SQLAlchemy models: `Movie`, `Series`, `SeriesEpisode`, `FeedHealth`, `NewsItem`, `Filter`, `AIFilteredView` (legacy, table retained in DB)
 - `src/common/db.py` — Database engine/session setup (MySQL + SQLite)
 - `src/common/config.py` — YAML config loading and validation
 

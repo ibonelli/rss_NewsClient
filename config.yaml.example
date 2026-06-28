@@ -56,7 +56,7 @@ webapp:
   port: 8080
 
 # News feeds — remove this section if you don't need news ingestion.
-# Each feed has a type: unfiltered | filtered | ai_filtered
+# Each feed has a type: unfiltered | filtered
 news_feeds:
   - name: "Tech News"
     url: "https://example.com/tech/feed"
@@ -70,8 +70,3 @@ news_feeds:
         pattern: "(CVE|vulnerability|exploit|breach)"
       - name: "tooling"
         pattern: "(release|update|patch) v?[0-9]"
-
-  - name: "AI News"
-    url: "https://example.com/ai/feed"
-    type: ai_filtered
-    # No extra config needed — use the web UI Export/Import workflow (ADR-009)

@@ -222,10 +222,9 @@ news_feeds:
       - name: "tooling"
         pattern: "(release|update|patch) v?[0-9]"
 
-  - name: "AI News"
-    url: "https://example.com/ai/feed"
-    type: ai_filtered
 ```
+
+_(The `ai_filtered` feed type was removed in M10. Only `unfiltered` and `filtered` are valid.)_
 
 ## 4) Alternatives considered
 

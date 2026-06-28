@@ -1,6 +1,6 @@
 # ADR-007: Two-table design for AI-filtered news (news_items + ai_filtered_views)
 
-- **Status:** Accepted
+- **Status:** Superseded by M10 — `ai_filtered` feed type removed; `ai_filtered_views` table retained in DB but no longer used
 - **Date:** 2026-06-15
 - **Owners:** Ignacio Bonelli
 

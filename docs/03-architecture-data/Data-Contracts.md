@@ -19,16 +19,16 @@
 - **Owner:** CLI Ingester (writes); Web UI (reads); Alerter (reads for threshold check)
 
 ### NewsItem
-- **Definition:** A raw news item fetched from any news feed type (unfiltered, filtered, or AI-filtered). All items are stored regardless of type.
+- **Definition:** A raw news item fetched from any news feed type (unfiltered or filtered). All items are stored regardless of type.
 - **Owner:** CLI Ingester (creates); CLI Filter Processor (updates `matched_filter_id`); Web UI (reads, marks as read)
 
 ### Filter
 - **Definition:** A named regex pattern associated with a specific filtered feed. Synced from config on each Filter Processor run.
 - **Owner:** CLI Filter Processor (syncs from config, applies regex); Web UI (reads for display)
 
-### AIFilteredView
-- **Definition:** An AI-processed result for a news item, imported by the user after external processing. One row per surfaced news item. The full set for a feed is replaced on each import. Absence means the item has not been surfaced by any import yet.
-- **Owner:** Web UI (creates/replaces on import; reads; marks as read; sets keep_as_context)
+### AIFilteredView (legacy)
+- **Definition:** Legacy table retained in DB schema; no longer written or read by the application (see Change-Log M10).
+- **Owner:** None — application no longer writes or reads this table
 
 ## 2) Schema (SQLAlchemy Models)
 
@@ -177,30 +177,9 @@ Synced from config on each Filter Processor run. Rows not present in config are 
 
 ---
 
-### AIFilteredView
+### AIFilteredView (legacy — table retained, not used)
 
-```python
-class AIFilteredView(Base):
-    __tablename__ = "ai_filtered_views"
-
-    id: int                       # PK, auto-increment
-    source_item_id: int           # NOT NULL, FK → news_items.id
-    feed_name: str                # NOT NULL — denormalized for query convenience
-    title: str                    # NOT NULL — denormalized from import payload
-    url: str                      # NOT NULL — denormalized from import payload
-    published_at: datetime | None # nullable — from import payload
-    category: str | None          # free-form label assigned by external AI, nullable
-    summary: str | None           # 1–2 sentence AI-generated summary, nullable
-    tags: str | None              # JSON array as text e.g. '["CVE","patch"]', nullable
-    is_read: bool                 # default False — user-controlled
-    keep_as_context: bool         # legacy column — present in DB schema, not used by application
-    ingested_at: datetime         # when this row was written
-```
-
-**Indexes:**
-- `ix_ai_filtered_views_source_item_id` UNIQUE on `source_item_id` — one row per news item
-- `ix_ai_filtered_views_feed_name` on `feed_name`
-- `ix_ai_filtered_views_is_read` on `is_read`
+The `ai_filtered_views` table remains in the database schema but is no longer written or queried by the application. It is retained to avoid a destructive migration on existing installations.
 
 ## 3) Validation Rules
 
@@ -316,16 +295,12 @@ news_feeds:
       - name: "tooling"
         pattern: "(release|update|patch) v?[0-9]"
 
-  - name: "AI News"
-    url: "https://example.com/ai/feed"
-    type: ai_filtered
-
 webapp:
   host: "127.0.0.1"
   port: 8080
 ```
 
-## 6) Export / Import JSON Contract (FR-033, FR-034)
+## 6) Export JSON Contract (FR-033)
 
 ### Export — `GET /api/news/{feed_name}/export`
 
@@ -333,7 +308,7 @@ Available for any news feed type. Returns a JSON file download (`Content-Disposi
 
 ```json
 {
-  "feed_name": "AI News",
+  "feed_name": "Tech News",
   "exported_at": "2026-06-19T10:00:00Z",
   "unread_items": [
     {
@@ -559,8 +534,7 @@ Only `is_read=false` episodes within the scoped series are affected.
 {
   "feeds": [
     { "name": "Tech News", "type": "unfiltered", "unread_count": 12 },
-    { "name": "Security", "type": "filtered", "unread_count": 3 },
-    { "name": "AI News", "type": "ai_filtered", "unread_count": 7 }
+    { "name": "Security", "type": "filtered", "unread_count": 3 }
   ]
 }
 ```
@@ -573,33 +547,28 @@ Query params:
 Returns items appropriate to the feed type, filtered by read state:
 - `unfiltered` → `news_items` for the feed matching `is_read`
 - `filtered` → `news_items` where `matched_filter_id` is not null, matching `is_read`
-- `ai_filtered` → `ai_filtered_views` for the feed matching `is_read`
 
 ```json
 {
-  "feed_name": "AI News",
-  "type": "ai_filtered",
+  "feed_name": "Security",
+  "type": "filtered",
   "read": false,
   "items": [
     {
-      "id": 88,
-      "source_item_id": 517,
+      "id": 517,
       "title": "Critical OpenSSL CVE patched in 3.4.1",
       "url": "https://openssl.org/news/...",
       "published_at": "2026-06-14T09:00:00Z",
-      "category": "Security Vulnerability",
-      "summary": "A critical OpenSSL CVE was patched in 3.4.1; upgrade immediately.",
-      "tags": ["CVE", "OpenSSL", "patch"],
       "is_read": false,
-      "ingested_at": "2026-06-19T10:05:00Z"
+      "matched_filter_name": "vulnerabilities"
     }
   ]
 }
 ```
 
-For `filtered` type, each item also includes `matched_filter_name: "vulnerabilities"`.
+For `filtered` type, each item includes `matched_filter_name`. For `unfiltered`, this field is absent.
 
-~~**`GET /api/news/{feed_name}/raw` — Removed.** The raw `news_items` sub-view for AI-filtered feeds is no longer provided.~~
+~~**`GET /api/news/{feed_name}/raw` — Removed.**~~
 
 ### POST `/api/news/items/{id}/read` and `/api/news/items/{id}/unread`
 
@@ -607,21 +576,13 @@ For `filtered` type, each item also includes `matched_filter_name: "vulnerabilit
 { "id": 517, "is_read": true }
 ```
 
-### POST `/api/news/views/{id}/read` and `/api/news/views/{id}/unread`
+~~**`POST /api/news/views/{id}/read` and `/api/news/views/{id}/unread` — Removed.** The `ai_filtered` feed type has been eliminated.~~
 
-```json
-{ "id": 88, "is_read": true }
-```
-
-~~**`POST /api/news/views/{id}/keep` and `/api/news/views/{id}/unkeep` — Removed.** Keep-as-context feature is no longer provided.~~
+~~**`POST /api/news/views/{id}/keep` and `/api/news/views/{id}/unkeep` — Removed.**~~
 
 ### POST `/api/news/{feed_name}/read-all`
 
-Marks all unread items for the feed as read:
-- `unfiltered` and `filtered` feeds: marks matching `news_items.is_read = true`
-- `ai_filtered` feeds: marks `ai_filtered_views.is_read = true` for the feed
-
-Available for any feed type. Only called from the Unread toggle state.
+Marks all unread `news_items` for the feed as read (`is_read = true`). Available for `unfiltered` and `filtered` feeds. Only called from the Unread toggle state.
 
 ```json
 { "ok": true }

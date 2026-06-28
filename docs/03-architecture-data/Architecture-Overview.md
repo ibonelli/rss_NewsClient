@@ -6,10 +6,9 @@
 |---|---|---|
 | **CLI Ingester** (`src/cli/main.py`) | Fetch all RSS/Atom feeds (movie + series + news), parse, deduplicate (movies and series), store raw data to `movies`, `series`, `series_episodes`, and `news_items`, update feed health | Cron-triggered process (runs and exits, step 1) |
 | **CLI Filter Processor** (`src/cli/filter.py`) | Sync `filters` table from config; for each `filtered` feed, regex-match `news_items` and set `matched_filter_id` on matches — never deletes rows | Cron-triggered process (runs and exits, step 2 — immediately after Ingester) |
-| **FastAPI Web UI** (`src/webui/main.py`) | JSON API for movies, series, and news (filtering, read-tracking, on-demand enrichment); AI-filtered export (`GET`) and import (`POST`) endpoints; static React frontend | Long-running local process (on-demand) |
+| **FastAPI Web UI** (`src/webui/main.py`) | JSON API for movies, series, and news (filtering, read-tracking, on-demand enrichment, export); static React frontend | Long-running local process (on-demand) |
 | **Database** (MySQL/SQLite) | Persistent state for all data | Shared resource |
 | **Config file** (`config.yaml`) | Feed definitions, filter patterns, rating thresholds, connection strings | Shared resource (read by both processes) |
-| **External AI Tool** | Consumes export JSON, produces import JSON; operated entirely outside this application | External (user-operated) |
 
 ### Project Structure
 
@@ -82,8 +81,6 @@ src/
 | GET | `/api/news/{feed_name}/items` | Items for a feed filtered by `read` bool (default `false`); type determines source table |
 | POST | `/api/news/items/{id}/read` | Mark `news_items` row as read |
 | POST | `/api/news/items/{id}/unread` | Mark `news_items` row as unread |
-| POST | `/api/news/views/{id}/read` | Mark `ai_filtered_views` row as read |
-| POST | `/api/news/views/{id}/unread` | Mark `ai_filtered_views` row as unread |
 | GET | `/api/news/{feed_name}/export` | Download JSON with `unread_items` for the feed (FR-033) |
 
 ### Database Interface
@@ -94,9 +91,9 @@ All three processes connect via SQLAlchemy using `database.url` from `config.yam
 |---|---|---|
 | CLI Ingester | — | `movies`, `series`, `series_episodes`, `news_items`, `feed_health` |
 | CLI Filter Processor | `news_items`, `filters` | `filters` (sync), `news_items.matched_filter_id` |
-| FastAPI Web UI | `movies`, `series`, `series_episodes`, `news_items`, `ai_filtered_views`, `feed_health`, `filters` | `movies.is_read`, `movies` (enrichment), `series.is_ignored`, `series_episodes.is_read`, `news_items.is_read`, `ai_filtered_views` (full replace on import), `ai_filtered_views.is_read`, `ai_filtered_views.keep_as_context` |
+| FastAPI Web UI | `movies`, `series`, `series_episodes`, `news_items`, `feed_health`, `filters` | `movies.is_read`, `movies` (enrichment), `series.is_ignored`, `series_episodes.is_read`, `news_items.is_read` |
 
-**Concurrency:** SQLite has a single-writer limitation — acceptable since Ingester and Filter Processor run sequentially in the same cron chain, and web app writes are infrequent (read-tracking and occasional imports). MySQL handles concurrent reads and writes without issue.
+**Concurrency:** SQLite has a single-writer limitation — acceptable since Ingester and Filter Processor run sequentially in the same cron chain, and web app writes are infrequent (read-tracking only). MySQL handles concurrent reads and writes without issue.
 
 ## 3) Security Model
 
@@ -113,7 +110,6 @@ All three processes connect via SQLAlchemy using `database.url` from `config.yam
 - Local machine only — no cloud, no containers
 - Install: `pip install -r requirements.txt`
 - Cron entry added manually (see above)
-- External AI tool operated separately by the user — not installed or configured by this application
 
 ### Scaling
 
@@ -129,8 +125,6 @@ Not applicable (single user, local machine). MySQL handles concurrent reads well
 | News RSS feed down | Same — per-feed `feed_health` row | No new items for that feed | Auto-retry next cron cycle; email alert after 24h |
 | RSS/Atom format changed | Parser logs warning on unexpected structure | Some items not ingested | Manual parser update |
 | Enrichment API unavailable | HTTP timeout/error caught | Movie shows without ratings | User retries via "refresh ratings" button |
-| Import payload schema invalid | Validation error returned by POST /import | Import rejected; existing ai_filtered_views unchanged | Fix payload and re-upload |
-| Import partially malformed | Per-row validation catches bad rows | Valid rows persisted; bad rows skipped and logged | Review logs; re-import corrected payload |
 | Database unreachable (MySQL) | SQLAlchemy connection error on startup | Both processes fail to start | Check MySQL service and connection string |
 | Web app crash | Process exits | UI unavailable | Restart `python src/webui/main.py` |
 | Disk full (SQLite) | Write error | Ingestion fails | Free disk space |
@@ -164,7 +158,6 @@ Not applicable (single user, local machine). MySQL handles concurrent reads well
 ### Availability (NFR-001)
 - CLI Ingester tolerates feed failures — logs error, retries next cron cycle
 - Web UI is on-demand (not a 24/7 service) — availability is user-controlled
-- Import endpoint rejects invalid payloads without modifying existing data
 
 ### Performance (NFR-002)
 - Web UI queries DB directly — with proper indexes, response <1s for 10k movies
@@ -181,9 +174,8 @@ Not applicable (single user, local machine). MySQL handles concurrent reads well
 ### ~~AI Timeout (NFR-005)~~ — Removed
 - No longer applicable; the application does not invoke any AI service
 
-### Export/Import Observability (NFR-006)
-- Web UI logs item count included in each export response (unread + context)
-- Web UI logs row count received and persisted on each import
+### Export Observability (NFR-006)
+- Web UI logs item count included in each export response
 
 ## 7) Constraints Compliance Matrix
 
@@ -196,5 +188,5 @@ Not applicable (single user, local machine). MySQL handles concurrent reads well
 | C-005 (Local SMTP) | `smtplib` with configurable SMTP host/port |
 | C-006 (Web UI via FastAPI) | FastAPI serves static React app (CDN-loaded, no build step) + JSON API; Movies, Series, and News tabs |
 | C-007 (Config file) | `config.yaml` for all configurable values — feeds, filters, thresholds, series feed URL |
-| C-008 (AI integration) | Export/import endpoints on Web UI; app never invokes any AI service directly (ADR-009) |
+| C-008 (No AI invocation) | App never invokes any AI service directly; export allows user to process items externally |
 | C-009 (No paid series APIs) | Series records stored as-is from EZTV RSS; no enrichment API calls |

@@ -24,11 +24,11 @@
 - **FR-053:** When a new episode is ingested for a series that is already marked `is_ignored = true`, the new episode MUST inherit `is_ignored` at the series level (no per-episode flag needed — ignore is a series-level attribute).
 
 ### Ingestion — News
-- **FR-019:** The system MUST support ingesting from news RSS/Atom feeds configurable in `config.yaml`, each with a `type` field: `unfiltered`, `filtered`, or `ai_filtered`.
+- **FR-019:** The system MUST support ingesting from news RSS/Atom feeds configurable in `config.yaml`, each with a `type` field: `unfiltered` or `filtered`. (The `ai_filtered` type has been removed — see Change-Log M10.)
 - **FR-020:** News feeds MUST be fetched on the same ~2h cron cycle as the movie feed.
 - **FR-021:** Unfiltered news feeds MUST store all fetched items without filtering.
 - **FR-022:** Filtered news feeds MUST store ALL fetched items. Items matching the configured regex MUST have the matching filter identifier recorded in a dedicated `matched_filter` field; non-matching items have this field null.
-- **FR-023:** AI-filtered news feeds MUST store all fetched items in `news_items`. The application MUST NOT invoke any AI tool directly; AI classification results are surfaced via the `ai_filtered_views` table, populated externally by the user using the export workflow (see FR-033).
+- ~~**FR-023:** Removed — the `ai_filtered` feed type and `ai_filtered_views` table are no longer used by the application.~~
 - ~~**FR-024:** Removed — Claude CLI prompt configuration is no longer applicable.~~
 - **FR-025:** Feed health tracking MUST extend to all news feeds, recording last successful fetch per feed.
 
@@ -40,7 +40,7 @@
 
 ### News Data Model
 - **FR-026:** Each stored `news_items` row MUST carry: title, URL, publication date, source feed name, full content, ingestion timestamp, read status, and `matched_filter` (nullable; populated only for filtered feeds when a regex match occurs).
-- **FR-027:** The `ai_filtered_views` table MUST contain: source feed name, title, URL, publication date, category (AI-assigned), summary (AI-generated), tags (AI-generated list), read status, ingestion timestamp, and a `source_item_id` foreign key referencing the originating `news_items` row. (The `keep_as_context` column exists in the DB schema but is no longer used by the application.)
+~~**FR-027:** Removed — the `ai_filtered_views` table is a legacy DB table, retained on disk but no longer used by the application.~~
 
 ### Web Application — Movies
 - **FR-004:** The system MUST provide a local web application (FastAPI) that serves the filtered movie view dynamically from the database.
@@ -68,7 +68,7 @@
 - **FR-028:** The web application MUST provide a separate "News" tab, distinct from the Movies tab.
 - **FR-029:** Each news feed view MUST provide a **Read/Unread toggle** (Unread default) that switches between items with `is_read=false` and items with `is_read=true` without a page reload. Per-item "Mark Read" (in Unread view) and "Mark Unread" (in Read view) buttons MUST remove the item from the current view immediately on click, persisted in DB, survives restart.
 - **FR-030:** For filtered feeds, the News tab MUST show only items where `matched_filter` is not null, displaying the matched filter name/pattern alongside each item.
-- **FR-031:** For AI-filtered feeds, the News tab MUST display items from the `ai_filtered_views` table, showing category, summary, and tags. Read/unread tracking MUST be applied to `ai_filtered_views.is_read`.
+~~**FR-031:** Removed — the `ai_filtered` feed type has been eliminated.~~
 - ~~**FR-032:** Removed — the raw `news_items` sub-view for AI-filtered feeds is no longer provided.~~
 
 ### Export (All News Feeds)
@@ -104,21 +104,21 @@
 - **NFR-003 (Maintainability):** Code MUST be written in Python with clear separation between ingestion, enrichment, and report generation.
 - **NFR-004 (Cost):** The system MUST NOT use paid APIs for movie or series metadata enrichment.
 - ~~**NFR-005:** Removed — Claude CLI timeout is no longer applicable.~~
-- **NFR-006 (Export/Import Observability):** The application SHOULD log the number of items included in each export request and the number of `ai_filtered_views` rows persisted on each import.
+- **NFR-006 (Export Observability):** The application SHOULD log the number of items included in each export request.
 
 ## 5) Data Requirements
 - **Movies:** title, year, genre(s), torrent URL, quality/resolution, IMDb ID (from enrichment), IMDb rating, RT expert rating, RT audience rating, poster URL, feed entry date, enrichment date, read status
 - **Series (`series` table):** series title (unique), IMDb ID (nullable), is_ignored flag
 - **Series episodes (`series_episodes` table):** FK → series, season number, episode number, quality variants (JSON list of `{quality, torrent_page_url}`), RSS entry date, ingestion timestamp, is_read flag, ignored status
 - **News — `news_items` (all feed types):** title, URL, publication date, source feed name, full content, ingestion timestamp, read status, matched_filter (nullable)
-- **News — `ai_filtered_views` (AI-filtered feeds only):** source feed name, title, URL, publication date, category, summary, tags (list), read status, keep-as-context flag, ingestion timestamp, source_item_id (FK → news_items)
+- **News — `ai_filtered_views`:** legacy table retained on disk; no longer written or read by the application
 - Retention: indefinite (database on disk)
 - PII classification: None
 
 ## 6) Integration Requirements
 - Upstream: YTS RSS feed (`https://yts.ag/rss`), EZTV RSS feed (`https://eztv.re/ezrss.xml`), configurable news RSS/Atom feeds, TMDb/OMDb/imdbapi.dev or scraping for movie ratings
-- Downstream: Local SMTP for email alerts; external AI tool (unconstrained — operated separately, consumes export JSON, produces import JSON)
-- Contracts: RSS XML format (subject to change without notice); export/import JSON schema defined in FR-033–FR-034
+- Downstream: Local SMTP for email alerts
+- Contracts: RSS XML format (subject to change without notice); export JSON schema defined in FR-033
 
 ## 7) Acceptance Criteria
 - **AC-001:** Running the scheduler for 24h produces at least one successful fetch and stores data in the database.
@@ -129,10 +129,10 @@
 - **AC-006:** Movies have enriched ratings from at least one external source.
 - **AC-007:** Unfiltered news feeds store all fetched items; read/unread status survives app restart.
 - **AC-008:** Filtered news feeds store all items; only items with a non-null `matched_filter` appear in the News tab, with the filter name displayed.
-- **AC-009:** For any news feed, clicking Export downloads a JSON file containing unread `news_items` rows (with IDs) and `keep_as_context` `ai_filtered_views` rows. Uploading a valid import JSON replaces `ai_filtered_views` for that feed, and the results appear immediately in the News tab.
+- **AC-009:** For any news feed, clicking Export downloads a JSON file containing unread `news_items` rows. No import control is present.
 - **AC-010:** The web UI News tab is accessible and displays news items independently of the Movies tab.
-- **AC-011:** For AI-filtered feeds, both the AI-filtered sub-view and the raw unprocessed sub-view are accessible in the News tab.
-- **AC-012:** After import, each `ai_filtered_views` row carries a `source_item_id` that correctly references its originating `news_items` row.
+- ~~**AC-011:** Removed — AI-filtered feed type eliminated.~~
+- ~~**AC-012:** Removed — AI-filtered feed type eliminated.~~
 - **AC-013:** Series episodes from the EZTV feed appear in the Series tab, grouped by series title → season → episode.
 - **AC-014:** Multiple quality variants of the same episode are merged into a single `series_episodes` row, each with a working torrent download page link.
 - **AC-015:** Each series title in the UI links to its IMDb page (direct when `imdb_id` is known; search URL otherwise).
