@@ -154,6 +154,10 @@ function MovieCard({ movie, onMarkRead, onMarkUnread, onEnrich }) {
         setEnriching(false);
     };
 
+    const imdbUrl = movie.imdb_id
+        ? `https://www.imdb.com/title/${movie.imdb_id}/`
+        : `https://www.imdb.com/find/?q=${encodeURIComponent(movie.title + " " + movie.year)}&s=tt&ttype=ft`;
+
     return html`
         <div className="movie-card">
             ${movie.poster_url && html`
@@ -162,7 +166,10 @@ function MovieCard({ movie, onMarkRead, onMarkUnread, onEnrich }) {
                 </div>
             `}
             <div className="movie-info">
-                <h3 className="movie-title">${movie.title} <span className="movie-year">(${movie.year})</span></h3>
+                <h3 className="movie-title">
+                    <a href=${imdbUrl} target="_blank" rel="noreferrer">${movie.title}</a>
+                    <span className="movie-year">(${movie.year})</span>
+                </h3>
                 <div className="movie-genres">
                     ${movie.genres.map((g, i) => html`<${Badge} key=${i} className="genre-badge">${g}</${Badge}>`)}
                 </div>
@@ -174,10 +181,7 @@ function MovieCard({ movie, onMarkRead, onMarkUnread, onEnrich }) {
                     `)}
                 </div>
                 <div className="movie-ratings">
-                    <${RatingBadge} label="IMDb" value=${movie.imdb_rating} max=${10}
-                        href=${movie.imdb_id
-                            ? `https://www.imdb.com/title/${movie.imdb_id}/`
-                            : (movie.imdb_rating != null ? `https://www.imdb.com/find/?q=${encodeURIComponent(movie.title + " " + movie.year)}&s=tt&ttype=ft` : null)} />
+                    <${RatingBadge} label="IMDb" value=${movie.imdb_rating} max=${10} />
                     <${RatingBadge} label="RT" value=${movie.rt_expert_rating} max=${100}
                         href=${movie.rt_expert_rating != null ? `https://www.rottentomatoes.com/search/?search=${encodeURIComponent(movie.title)}` : null} />
                     <${RatingBadge} label="Audience" value=${movie.rt_audience_rating} max=${100}

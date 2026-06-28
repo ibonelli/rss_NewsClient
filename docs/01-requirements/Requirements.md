@@ -83,7 +83,7 @@
   - The four combinations (Unread+Flagged, Unread+Un-Flagged, Read+Flagged, Read+Un-Flagged) cover all movie states. Default on load: Unread + Flagged.
 - **FR-055:** Movies with no ratings (all null — not yet enriched) MUST appear in the **Flagged** state. They pass the filter by default until enriched.
 - **FR-056:** The Flagged/Un-Flagged split MUST use the same runtime logic and config thresholds as the existing filter — no `is_flagged` column is stored; the split is computed at query time.
-- **FR-038:** IMDb and RT rating badges MUST be clickable links. For enriched movies (where `imdb_id` is known), the IMDb badge MUST link directly to `https://www.imdb.com/title/{imdb_id}/`. When `imdb_id` is not yet known, the badge MUST fall back to an IMDb title-search URL. RT badges MUST link to a Rotten Tomatoes search for the movie title. Badges with no rating (N/A) MUST NOT be links.
+- **FR-038:** The movie title MUST be a clickable link to IMDb — directly to `https://www.imdb.com/title/{imdb_id}/` when `imdb_id` is known, falling back to an IMDb title+year search URL for unenriched movies. The IMDb rating badge MUST be plain text (not a link). RT (Tomatometer and Audience) badges MUST link to a Rotten Tomatoes title search. RT badges with no rating (N/A) MUST NOT be links.
 
 ### Mark All as Read
 - **FR-048:** The Movies tab MUST provide a "Mark All Read" button when the **Unread** toggle is active. It marks only the currently visible movies (respecting the current Flagged/Un-Flagged state) as read, and removes them from the view. The button MUST NOT appear when the Read toggle is active.
