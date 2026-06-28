@@ -79,16 +79,12 @@ src/
 | Method | Path | Description |
 |---|---|---|
 | GET | `/api/news` | All news feeds with metadata and item counts |
-| GET | `/api/news/{feed_name}/items` | Items for a feed (filtered/AI-filtered/unfiltered per feed type) |
-| GET | `/api/news/{feed_name}/raw` | Raw `news_items` for AI-filtered feeds (FR-032 sub-view) |
+| GET | `/api/news/{feed_name}/items` | Items for a feed filtered by `read` bool (default `false`); type determines source table |
 | POST | `/api/news/items/{id}/read` | Mark `news_items` row as read |
 | POST | `/api/news/items/{id}/unread` | Mark `news_items` row as unread |
 | POST | `/api/news/views/{id}/read` | Mark `ai_filtered_views` row as read |
 | POST | `/api/news/views/{id}/unread` | Mark `ai_filtered_views` row as unread |
-| POST | `/api/news/views/{id}/keep` | Set `keep_as_context = true` on `ai_filtered_views` row |
-| POST | `/api/news/views/{id}/unkeep` | Set `keep_as_context = false` on `ai_filtered_views` row |
-| GET | `/api/news/{feed_name}/export` | Download JSON with `unread_items` + `context_items` for an `ai_filtered` feed (FR-033) |
-| POST | `/api/news/{feed_name}/import` | Replace all `ai_filtered_views` for a feed with imported JSON payload (FR-034) |
+| GET | `/api/news/{feed_name}/export` | Download JSON with `unread_items` for the feed (FR-033) |
 
 ### Database Interface
 

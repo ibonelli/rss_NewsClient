@@ -28,7 +28,7 @@
 - **FR-020:** News feeds MUST be fetched on the same ~2h cron cycle as the movie feed.
 - **FR-021:** Unfiltered news feeds MUST store all fetched items without filtering.
 - **FR-022:** Filtered news feeds MUST store ALL fetched items. Items matching the configured regex MUST have the matching filter identifier recorded in a dedicated `matched_filter` field; non-matching items have this field null.
-- **FR-023:** AI-filtered news feeds MUST store all fetched items in `news_items`. The application MUST NOT invoke any AI tool directly; AI classification is handled externally via the export/import workflow (see FR-033–FR-036), which is available for all news feed types.
+- **FR-023:** AI-filtered news feeds MUST store all fetched items in `news_items`. The application MUST NOT invoke any AI tool directly; AI classification results are surfaced via the `ai_filtered_views` table, populated externally by the user using the export workflow (see FR-033).
 - ~~**FR-024:** Removed — Claude CLI prompt configuration is no longer applicable.~~
 - **FR-025:** Feed health tracking MUST extend to all news feeds, recording last successful fetch per feed.
 
@@ -40,7 +40,7 @@
 
 ### News Data Model
 - **FR-026:** Each stored `news_items` row MUST carry: title, URL, publication date, source feed name, full content, ingestion timestamp, read status, and `matched_filter` (nullable; populated only for filtered feeds when a regex match occurs).
-- **FR-027:** The `ai_filtered_views` table MUST contain: source feed name, title, URL, publication date, category (AI-assigned), summary (AI-generated), tags (AI-generated list), read status, keep-as-context flag, ingestion timestamp, and a `source_item_id` foreign key referencing the originating `news_items` row.
+- **FR-027:** The `ai_filtered_views` table MUST contain: source feed name, title, URL, publication date, category (AI-assigned), summary (AI-generated), tags (AI-generated list), read status, ingestion timestamp, and a `source_item_id` foreign key referencing the originating `news_items` row. (The `keep_as_context` column exists in the DB schema but is no longer used by the application.)
 
 ### Web Application — Movies
 - **FR-004:** The system MUST provide a local web application (FastAPI) that serves the filtered movie view dynamically from the database.
@@ -66,16 +66,16 @@
 
 ### Web Application — News
 - **FR-028:** The web application MUST provide a separate "News" tab, distinct from the Movies tab.
-- **FR-029:** The news view MUST provide per-item read/unread tracking with behavior identical to movies (persisted in DB, survives restart).
+- **FR-029:** Each news feed view MUST provide a **Read/Unread toggle** (Unread default) that switches between items with `is_read=false` and items with `is_read=true` without a page reload. Per-item "Mark Read" (in Unread view) and "Mark Unread" (in Read view) buttons MUST remove the item from the current view immediately on click, persisted in DB, survives restart.
 - **FR-030:** For filtered feeds, the News tab MUST show only items where `matched_filter` is not null, displaying the matched filter name/pattern alongside each item.
-- **FR-031:** For AI-filtered feeds, the News tab MUST display items from the `ai_filtered_views` table, showing category, summary, and tags. Read/unread tracking for AI-filtered feeds MUST be applied to `ai_filtered_views` rows.
-- **FR-032:** For AI-filtered feeds, the News tab MUST also provide a sub-view displaying the full raw `news_items` for that feed, allowing the user to browse unprocessed items alongside the AI-filtered view.
+- **FR-031:** For AI-filtered feeds, the News tab MUST display items from the `ai_filtered_views` table, showing category, summary, and tags. Read/unread tracking MUST be applied to `ai_filtered_views.is_read`.
+- ~~**FR-032:** Removed — the raw `news_items` sub-view for AI-filtered feeds is no longer provided.~~
 
-### Export / Import (All News Feeds)
-- **FR-033:** The web application MUST expose `GET /api/news/{feed}/export` for any configured news feed, returning a downloadable JSON file with two sections: `unread_items` (all `news_items` rows for that feed where `is_read = false`) and `context_items` (all `ai_filtered_views` rows for that feed where `keep_as_context = true`). Each item in `unread_items` MUST include its `news_items.id` so the import can reference it.
-- **FR-034:** The web application MUST expose `POST /api/news/{feed}/import` for any configured news feed, accepting a JSON payload in the `ai_filtered_views` format (title, URL, publication date, category, summary, tags, and `source_item_id` referencing the originating `news_items.id`). On import, ALL existing `ai_filtered_views` rows for that feed MUST be deleted and replaced with the imported rows.
-- **FR-035:** The News tab MUST provide Export and Import UI controls on every news feed view (regardless of type).
-- **FR-036:** The Import control MUST submit a local JSON file to `FR-034` and refresh the view on success.
+### Export (All News Feeds)
+- **FR-033:** The web application MUST expose `GET /api/news/{feed}/export` for any configured news feed, returning a downloadable JSON file containing only `unread_items` (all `news_items` rows for that feed where `is_read = false`). Each item MUST include its `news_items.id`, title, URL, publication date, and content.
+- ~~**FR-034:** Removed — the import endpoint (`POST /api/news/{feed}/import`) is no longer provided.~~
+- **FR-035:** The News tab MUST provide an **Export Unread** button on every news feed view. There is no Import control.
+- ~~**FR-036:** Removed — no import UI control.~~
 
 ### Web Application — Movie View Controls
 - **FR-037:** The Movies tab MUST provide two independent toggle buttons that combine to control the displayed movie list, without a page reload:
@@ -89,7 +89,7 @@
 ### Mark All as Read
 - **FR-048:** The Movies tab MUST provide a "Mark All Read" button when the **Unread** toggle is active. It marks only the currently visible movies (respecting the current Flagged/Un-Flagged state) as read, and removes them from the view. The button MUST NOT appear when the Read toggle is active.
 - **FR-049:** The Series tab MUST provide a "Mark All Read" button when the **Unread** toggle is active. It marks only the unread episodes of series in the currently visible Not-Ignored or Ignored group as read and removes them from the view. The button MUST NOT appear when the Read toggle is active.
-- **FR-050:** Every news feed view MUST provide a "Mark All Read" button that marks all `news_items` (and any `ai_filtered_views`) for that feed as read in a single action.
+- **FR-050:** Every news feed view MUST provide a "Mark All Read" button when the **Unread** toggle is active. It marks all currently unread items for that feed as read and clears the view. The button MUST NOT appear when the Read toggle is active.
 
 ### Read Tracking
 - **FR-017:** The web application MUST provide a UI mechanism (button/toggle) to mark movies as "already read/seen" so they are excluded from the view.

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Planned — News Feed Simplification + Read/Unread Toggle
+- `GET /api/news/{feed}/items?read=false|true` — new `read` bool param (default `false`); UI shows only items matching the selected read state
+- Per-item "Mark Read" (Unread view) and "Mark Unread" (Read view) buttons remove the item from the current view immediately on click
+- "Mark All Read" button visible only when Unread toggle is active; marks all unread items for the feed
+- **Removed**: `POST /api/news/{feed}/import` — import endpoint and Import UI button eliminated
+- **Removed**: `GET /api/news/{feed}/raw` — raw sub-view for AI-filtered feeds eliminated
+- **Removed**: `POST /api/news/views/{id}/keep` and `/unkeep` — Keep as Context feature eliminated
+- `ai_filtered_views.keep_as_context` column retained in DB schema but no longer used by the application
+- Export (`GET /api/news/{feed}/export`) simplified: returns only `unread_items` (no `context_items` section); always exports unread regardless of toggle state
+- `FeedToolbar` component: Export button kept; Import button removed
+- `ai_filter.sh` script affected: the import step no longer has an API endpoint to POST to
+
 ### Added — Series Two-Toggle View (Unread/Read × Not-Ignored/Ignored)
 - `GET /api/series?read=false&ignored=false` — replaces old `?view=unread|all|ignored`; two independent bool params
   - `read` (bool, default `false`): `false` = unread episodes, `true` = read episodes

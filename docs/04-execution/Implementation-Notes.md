@@ -2,7 +2,7 @@
 
 ## Scope implemented
 
-All milestones M1–M8 are implemented and running in production.
+M1–M8 are implemented and running in production. M9 is planned.
 
 - **M1 — Ingestion:** CLI ingester, RSS fetch/parse, dedup, storage
 - **M2 — Enrichment:** On-demand OMDb enrichment via web UI; stores `imdb_id` for direct linking
@@ -10,8 +10,9 @@ All milestones M1–M8 are implemented and running in production.
 - **M4 — Alerting + Polish:** Feed health tracking per feed; SMTP alert on 24h downtime
 - **M5 — News Feeds + Filter Processor:** News ingestion (all types); CLI Filter Processor (regex only); News tab in web UI; export/import for AI-filtered feeds
 - **M6 — Series Feed:** EZTV ingestion; Series tab with read-tracking; feed health + alerting
-- **M7 — Series Two-Table Split + Ignore:** Split `series` into `series` (title-level) + `series_episodes` (episode-level); `is_ignored` on `series` row; three Series views (Unread/All/Ignored); Ignore toggle at series title level; ingester inherits ignored status on new episodes
+- **M7 — Series Two-Table Split + Ignore:** Split `series` into `series` (title-level) + `series_episodes` (episode-level); `is_ignored` on `series` row; two-toggle view (Unread/Read × Not-Ignored/Ignored); Ignore toggle at series title level
 - **M8 — Movies Two-Toggle View:** Replace Filtered/All toggle with two independent toggles — Read/Unread and Flagged/Un-Flagged
+- **M9 — News Feed Simplification + Read/Unread Toggle:** Remove Import, raw sub-view, and Keep as Context; add Read/Unread toggle to all news feed types
 
 ## Files touched
 
@@ -236,3 +237,40 @@ python src/cli/main.py  # repopulate from live feed
 7. Click "Mark All Read" on Unread + Un-Flagged — confirm only Un-Flagged unread movies disappear
 8. Verify "Mark All Read" does not appear when Read toggle is active
 9. Change a rating threshold in config.yaml and reload — confirm a movie moves between Flagged and Un-Flagged without any DB change
+
+---
+
+## M9 — News Feed Simplification + Read/Unread Toggle
+
+### Scope
+- **Removed**: `POST /api/news/{feed}/import` endpoint and Import UI button
+- **Removed**: `GET /api/news/{feed}/raw` endpoint and raw sub-view in AI-filtered feeds
+- **Removed**: `POST /api/news/views/{id}/keep` and `/unkeep` endpoints; Keep as Context buttons in UI
+- `GET /api/news/{feed}/items` gains a `read: bool = Query(default=False)` param — returns only items matching `is_read == read`
+- `GET /api/news/{feed}/export` simplified: returns only `unread_items` (no `context_items` section)
+- All three feed views (`UnfilteredFeedView`, `FilteredFeedView`, `AIFilteredFeedView`) gain an **Unread/Read toggle** (default: Unread), identical pattern to Movies/Series
+- Per-item "Mark Read" (Unread view) and "Mark Unread" (Read view) buttons **remove** the item from the current view on click instead of merely toggling its visual state
+- "Mark All Read" button shown only in Unread state; marks all unread items for the feed; clears view
+- `FeedToolbar` component simplified: Export button kept; Import button removed
+- No DB schema changes — `keep_as_context` column left in place but unused
+
+### Files to touch
+- `src/webui/routes.py` — update `get_news_items()`: add `read` bool param; update export handler to drop `context_items`; delete import, raw, keep, unkeep route handlers
+- `src/webui/static/app.js` — simplify `FeedToolbar` (remove Import); update all three feed view components with Read/Unread toggle; update `NewsItemRow` and `AIViewRow` to remove from view on click; remove `AIViewRow` Keep as Context button and `showRaw` logic
+
+### Key decisions
+- No DB migration needed — `keep_as_context` column is inert; leaving it avoids destructive ALTER TABLE on a live DB
+- `ai_filter.sh` is broken by this change (import endpoint removed); script should be deleted or archived
+- Export always exports unread `news_items` regardless of toggle state — the export is a workflow tool, not a view of the current UI state
+- `read-all` for `ai_filtered` feeds marks `ai_filtered_views.is_read` only (not `news_items`); `news_items` for ai_filtered feeds are never shown in the UI after raw sub-view removal
+
+### How to test locally (M9)
+1. Open News tab → any feed → confirm default is Unread view (only unread items shown)
+2. Click "Read" toggle — confirm only read items appear; each row has "Mark Unread" button
+3. Click "Mark Unread" on an item — confirm it disappears from Read view; appears in Unread view
+4. Back to Unread view: click "Mark Read" on an item — confirm it disappears from Unread view
+5. Click "Mark All Read" — confirm Unread view empties; switch to Read toggle to see all items
+6. Verify "Mark All Read" does not appear when Read toggle is active
+7. Click "Export Unread" — confirm JSON contains only unread items (no `context_items` key)
+8. Confirm no Import button appears anywhere in the News tab
+9. For AI-filtered feed: confirm no "Show Raw Items" button and no Keep as Context button appear

@@ -192,18 +192,15 @@ class AIFilteredView(Base):
     category: str | None          # free-form label assigned by external AI, nullable
     summary: str | None           # 1–2 sentence AI-generated summary, nullable
     tags: str | None              # JSON array as text e.g. '["CVE","patch"]', nullable
-    is_read: bool                 # default False — user-controlled; NOT reset on import
-    keep_as_context: bool         # default False — user-controlled; if True, included in next export
-    ingested_at: datetime         # when this row was written by the import
+    is_read: bool                 # default False — user-controlled
+    keep_as_context: bool         # legacy column — present in DB schema, not used by application
+    ingested_at: datetime         # when this row was written
 ```
 
 **Indexes:**
 - `ix_ai_filtered_views_source_item_id` UNIQUE on `source_item_id` — one row per news item
 - `ix_ai_filtered_views_feed_name` on `feed_name`
 - `ix_ai_filtered_views_is_read` on `is_read`
-- `ix_ai_filtered_views_keep_as_context` on `keep_as_context` — export context query
-
-**Import behaviour:** On `POST /api/news/{feed}/import`, all existing rows for that feed are deleted and replaced with the payload rows. `is_read` and `keep_as_context` are NOT preserved from deleted rows — they reset to `false` on each import. (The export captures `keep_as_context` items before replacement so the external tool can re-include them.)
 
 ## 3) Validation Rules
 
@@ -242,12 +239,8 @@ class AIFilteredView(Base):
 - **V-014:** `feed_name` MUST match a configured feed name in config
 - **V-015:** Duplicate `(url, feed_name)` MUST be skipped (idempotent ingestion)
 
-### AIFilteredView (on import)
-- **V-016:** `source_item_id` in import payload MUST match a `news_items.id` belonging to the target feed; discard row if not found
-- **V-017:** `category` string, if present, MUST be non-empty (1–50 chars); skip row if blank
-- **V-018:** `summary` MUST be a non-empty string if present
-- **V-019:** `tags` MUST be a valid JSON array of non-empty strings if present
-- **V-020:** `title` and `url` MUST be non-empty strings; reject entire import if any row is missing them
+~~### AIFilteredView (on import) — Removed~~
+~~V-016 through V-020 are no longer applicable — the import endpoint has been removed.~~
 
 ## 4) Compatibility Rules
 
@@ -336,7 +329,7 @@ webapp:
 
 ### Export — `GET /api/news/{feed_name}/export`
 
-Returns a JSON file download. The external AI tool reads this file, processes it, and produces the import payload.
+Available for any news feed type. Returns a JSON file download (`Content-Disposition: attachment`) containing all unread `news_items` for the feed.
 
 ```json
 {
@@ -350,81 +343,15 @@ Returns a JSON file download. The external AI tool reads this file, processes it
       "published_at": "2026-06-14T09:00:00Z",
       "content": "Full article text — not truncated."
     }
-  ],
-  "context_items": [
-    {
-      "source_item_id": 412,
-      "title": "Log4Shell follow-up: affected projects list updated",
-      "url": "https://example.com/log4shell-update",
-      "published_at": "2026-06-10T08:00:00Z",
-      "category": "Security",
-      "summary": "The affected projects list for Log4Shell was updated with 12 new entries.",
-      "tags": ["Log4Shell", "CVE", "Java"]
-    }
   ]
 }
 ```
 
-**`unread_items`** — `news_items` rows where `is_read = false` for this feed. Fields: `id`, `title`, `url`, `published_at`, `content`. The `id` is the `news_items.id` that the import must reference as `source_item_id`.
+**`unread_items`** — `news_items` rows where `is_read = false` for this feed, regardless of which Read/Unread toggle state is active in the UI. Fields: `id`, `title`, `url`, `published_at`, `content`.
 
-**`context_items`** — `ai_filtered_views` rows where `keep_as_context = true` for this feed. Included for the external tool to use as context/examples; the tool is not expected to return them in its output.
+Log: `"Feed <name> export: N unread items"` (NFR-006).
 
-Log: `"Feed <name> export: N unread items, M context items"` (NFR-006).
-
----
-
-### Import — `POST /api/news/{feed_name}/import`
-
-The external AI tool produces this payload. The user uploads it via the web UI.
-
-```json
-{
-  "views": [
-    {
-      "source_item_id": 517,
-      "title": "Critical OpenSSL CVE patched in 3.4.1",
-      "url": "https://openssl.org/news/...",
-      "published_at": "2026-06-14T09:00:00Z",
-      "category": "Security Vulnerability",
-      "summary": "A critical OpenSSL CVE was patched in 3.4.1; all users should upgrade immediately.",
-      "tags": ["CVE", "OpenSSL", "patch"]
-    }
-  ]
-}
-```
-
-**Import field contract:**
-
-| Field | Type | Rules |
-|---|---|---|
-| `source_item_id` | int | MUST match a `news_items.id` for this feed (V-016); discard row if not found |
-| `title` | string | MUST be non-empty (V-020) |
-| `url` | string | MUST be non-empty (V-020) |
-| `published_at` | string (ISO 8601) | nullable |
-| `category` | string | Optional; 1–50 chars if present (V-017) |
-| `summary` | string | Optional; non-empty if present (V-018) |
-| `tags` | string[] | Optional; array of non-empty strings if present (V-019) |
-
-**Import flow:**
-
-```
-1. Validate feed exists in config — 404 if not
-2. Validate payload is valid JSON with a "views" array — 400 if not
-3. For each row: validate source_item_id, title, url — discard invalid rows and log (V-016, V-020)
-4. DELETE all existing ai_filtered_views rows for this feed
-5. INSERT valid rows with ingested_at = now(); is_read = false; keep_as_context = false
-6. Return: { "imported": N, "discarded": M }
-
-log: "Feed <name> import: received N rows, persisted P, discarded D" (NFR-006)
-```
-
-**Error handling:**
-
-| Failure | HTTP response |
-|---|---|
-| Feed not found in config | `404 Not Found` |
-| Payload is not valid JSON | `400 Bad Request` |
-| Individual row fails validation (V-016, V-020) | Row discarded, logged; remainder processed; `200` with discard count |
+~~**Import (`POST /api/news/{feed_name}/import`) — Removed.** The import endpoint no longer exists.~~
 
 ## 7) RSS Feed Contract (External — Not Controlled)
 
@@ -640,15 +567,19 @@ Only `is_read=false` episodes within the scoped series are affected.
 
 ### GET `/api/news/{feed_name}/items`
 
-Returns items appropriate to the feed type:
-- `unfiltered` → all `news_items` for the feed
-- `filtered` → only `news_items` where `matched_filter_id` is not null (includes filter name)
-- `ai_filtered` → rows from `ai_filtered_views` for the feed
+Query params:
+- `read` (bool, default `false`) — `false` = unread items (`is_read=false`); `true` = read items (`is_read=true`)
+
+Returns items appropriate to the feed type, filtered by read state:
+- `unfiltered` → `news_items` for the feed matching `is_read`
+- `filtered` → `news_items` where `matched_filter_id` is not null, matching `is_read`
+- `ai_filtered` → `ai_filtered_views` for the feed matching `is_read`
 
 ```json
 {
   "feed_name": "AI News",
   "type": "ai_filtered",
+  "read": false,
   "items": [
     {
       "id": 88,
@@ -660,7 +591,6 @@ Returns items appropriate to the feed type:
       "summary": "A critical OpenSSL CVE was patched in 3.4.1; upgrade immediately.",
       "tags": ["CVE", "OpenSSL", "patch"],
       "is_read": false,
-      "keep_as_context": false,
       "ingested_at": "2026-06-19T10:05:00Z"
     }
   ]
@@ -669,30 +599,7 @@ Returns items appropriate to the feed type:
 
 For `filtered` type, each item also includes `matched_filter_name: "vulnerabilities"`.
 
-### GET `/api/news/{feed_name}/raw`
-
-Available for any news feed. Returns the raw `news_items` rows so the user can browse unprocessed items alongside any AI-filtered results. For feeds with no imported `ai_filtered_views`, all items will have `has_ai_view: false`.
-
-```json
-{
-  "feed_name": "AI News",
-  "items": [
-    {
-      "id": 517,
-      "title": "Critical OpenSSL CVE patched in 3.4.1",
-      "url": "https://openssl.org/news/...",
-      "published_at": "2026-06-14T09:00:00Z",
-      "full_content": "Full article text...",
-      "ingested_at": "2026-06-14T10:00:00Z",
-      "is_read": false,
-      "matched_filter_id": null,
-      "has_ai_view": true
-    }
-  ]
-}
-```
-
-`has_ai_view` indicates whether an `ai_filtered_views` row exists for this item (useful for UI to distinguish processed vs. pending items).
+~~**`GET /api/news/{feed_name}/raw` — Removed.** The raw `news_items` sub-view for AI-filtered feeds is no longer provided.~~
 
 ### POST `/api/news/items/{id}/read` and `/api/news/items/{id}/unread`
 
@@ -706,15 +613,15 @@ Available for any news feed. Returns the raw `news_items` rows so the user can b
 { "id": 88, "is_read": true }
 ```
 
-### POST `/api/news/views/{id}/keep` and `/api/news/views/{id}/unkeep`
-
-```json
-{ "id": 88, "keep_as_context": true }
-```
+~~**`POST /api/news/views/{id}/keep` and `/api/news/views/{id}/unkeep` — Removed.** Keep-as-context feature is no longer provided.~~
 
 ### POST `/api/news/{feed_name}/read-all`
 
-Marks all `news_items` and `ai_filtered_views` for the feed as read. Available for any feed type.
+Marks all unread items for the feed as read:
+- `unfiltered` and `filtered` feeds: marks matching `news_items.is_read = true`
+- `ai_filtered` feeds: marks `ai_filtered_views.is_read = true` for the feed
+
+Available for any feed type. Only called from the Unread toggle state.
 
 ```json
 { "ok": true }
@@ -722,17 +629,9 @@ Marks all `news_items` and `ai_filtered_views` for the feed as read. Available f
 
 ### GET `/api/news/{feed_name}/export`
 
-Available for any news feed type (not restricted to `ai_filtered`). Returns `Content-Disposition: attachment; filename="<feed_name>-export.json"`. Shape documented in Section 6.
+Available for any news feed type. Returns `Content-Disposition: attachment; filename="<feed_name>-export.json"`. Shape documented in Section 6. Always exports unread `news_items` regardless of the current UI toggle state.
 
-### POST `/api/news/{feed_name}/import`
-
-Available for any news feed type. Replaces all `ai_filtered_views` for the feed with the payload rows.
-
-```json
-{ "imported": 12, "discarded": 1 }
-```
-
-On error: `400` with `{ "detail": "..." }`.
+~~**`POST /api/news/{feed_name}/import` — Removed.**~~
 
 ### Error Responses (All Endpoints)
 
