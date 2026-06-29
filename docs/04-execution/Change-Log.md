@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Added — Series "Ignore All" Button
+- `POST /api/series/ignore-all` — sets `is_ignored = True` on all non-ignored series; returns `{"ignored": count}`
+- Series tab: "Ignore All" button in the toolbar; visible only when Not-Ignored view is active; clears the series list on success
+- Behaviour mirrors "Mark All Read": shows `...` while in-flight, disabled during the request
+
 ### Added — M10: Drop ai_filtered Feed Type
 - Remove `ai_filtered` as a valid feed type from config, backend, and frontend
 - Feeds configured with `type: ai_filtered` will no longer be served or displayed

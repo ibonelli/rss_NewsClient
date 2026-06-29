@@ -450,6 +450,7 @@ function SeriesTab() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [markingAll, setMarkingAll] = useState(false);
+    const [ignoringAll, setIgnoringAll] = useState(false);
 
     const loadSeries = (read, ignored) => {
         setLoading(true);
@@ -507,6 +508,17 @@ function SeriesTab() {
         setMarkingAll(false);
     };
 
+    const handleIgnoreAll = async () => {
+        setIgnoringAll(true);
+        try {
+            await fetch(`/api/series/ignore-all`, { method: "POST" });
+            setSeriesList([]);
+        } catch (e) {
+            console.error("Failed to ignore all series:", e);
+        }
+        setIgnoringAll(false);
+    };
+
     const handleIgnore = async (seriesId) => {
         await fetch(`/api/series/${seriesId}/ignore`, { method: "POST" });
         setSeriesList(prev => prev.filter(s => s.id !== seriesId));
@@ -539,6 +551,11 @@ function SeriesTab() {
                 ${!isRead && html`
                     <button className="btn btn-secondary btn-sm" onClick=${handleMarkAllRead} disabled=${markingAll}>
                         ${markingAll ? "..." : "Mark All Read"}
+                    </button>
+                `}
+                ${!isIgnored && html`
+                    <button className="btn btn-secondary btn-sm" onClick=${handleIgnoreAll} disabled=${ignoringAll}>
+                        ${ignoringAll ? "..." : "Ignore All"}
                     </button>
                 `}
             </div>

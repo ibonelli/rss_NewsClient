@@ -309,6 +309,15 @@ async def mark_all_series_read(
     return {"marked_read": count}
 
 
+@router.post("/api/series/ignore-all")
+async def ignore_all_series(session: Session = Depends(_get_session)):
+    count = session.query(Series).filter(Series.is_ignored == False).update(
+        {"is_ignored": True}, synchronize_session=False
+    )
+    session.commit()
+    return {"ignored": count}
+
+
 # ---------------------------------------------------------------------------
 # Health
 # ---------------------------------------------------------------------------
