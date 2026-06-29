@@ -26,6 +26,10 @@
 - **Definition:** A named regex pattern associated with a specific filtered feed. Synced from config on each Filter Processor run.
 - **Owner:** CLI Filter Processor (syncs from config, applies regex); Web UI (reads for display)
 
+### DesignItem
+- **Definition:** An article fetched from a configurable design RSS feed. Stores title, summary, and image URL (if available in feed). No filtering — all items are stored and displayed.
+- **Owner:** CLI Ingester (creates); Web UI (reads, marks as read/unread)
+
 ### AIFilteredView (legacy)
 - **Definition:** Legacy table retained in DB schema; no longer written or read by the application (see Change-Log M10).
 - **Owner:** None — application no longer writes or reads this table
@@ -177,6 +181,30 @@ Synced from config on each Filter Processor run. Rows not present in config are 
 
 ---
 
+### DesignItem
+
+```python
+class DesignItem(Base):
+    __tablename__ = "design_items"
+
+    id: int                         # PK, auto-increment
+    feed_name: str                  # NOT NULL — matches feed name in config
+    title: str                      # NOT NULL
+    url: str                        # NOT NULL — dedup key with feed_name
+    published_at: datetime | None   # publication date from feed (nullable if absent)
+    summary: str                    # NOT NULL, plain text (HTML stripped)
+    image_url: str | None           # nullable — extracted best-effort from RSS (FR-063)
+    ingested_at: datetime           # auto-set on insert
+    is_read: bool                   # default False
+```
+
+**Indexes:**
+- `ix_design_items_url_feed` UNIQUE on `(url, feed_name)` — dedup key
+- `ix_design_items_feed_name` on `feed_name` — feed-scoped queries
+- `ix_design_items_is_read` on `is_read`
+
+---
+
 ### AIFilteredView (legacy — table retained, not used)
 
 The `ai_filtered_views` table remains in the database schema but is no longer written or queried by the application. It is retained to avoid a destructive migration on existing installations.
@@ -217,6 +245,14 @@ The `ai_filtered_views` table remains in the database schema but is no longer wr
 - **V-013:** `url` MUST be a non-empty string
 - **V-014:** `feed_name` MUST match a configured feed name in config
 - **V-015:** Duplicate `(url, feed_name)` MUST be skipped (idempotent ingestion)
+
+### DesignItem (on ingestion)
+- **V-028:** `title` MUST NOT be empty
+- **V-029:** `url` MUST be a non-empty string
+- **V-030:** `feed_name` MUST match a configured feed name under `design_feeds:` in config
+- **V-031:** Duplicate `(url, feed_name)` MUST be skipped (idempotent ingestion)
+- **V-032:** `image_url`, if extracted, MUST be a non-empty string starting with `http`; otherwise stored as null
+- **V-033:** `summary` is stored as plain text — HTML tags from `<description>` MUST be stripped before storage. If the feed provides no summary/description, store an empty string.
 
 ~~### AIFilteredView (on import) — Removed~~
 ~~V-016 through V-020 are no longer applicable — the import endpoint has been removed.~~
@@ -294,6 +330,13 @@ news_feeds:
         pattern: "(CVE|vulnerability|exploit|breach)"
       - name: "tooling"
         pattern: "(release|update|patch) v?[0-9]"
+
+design_feeds:
+  - name: "Designboom"
+    url: "https://www.designboom.com/feed/"
+
+  # - name: "Dezeen"
+  #   url: "https://www.dezeen.com/feed/"
 
 webapp:
   host: "127.0.0.1"
@@ -593,6 +636,59 @@ Marks all unread `news_items` for the feed as read (`is_read = true`). Available
 Available for any news feed type. Returns `Content-Disposition: attachment; filename="<feed_name>-export.json"`. Shape documented in Section 6. Always exports unread `news_items` regardless of the current UI toggle state.
 
 ~~**`POST /api/news/{feed_name}/import` — Removed.**~~
+
+### GET `/api/design`
+
+Returns all configured design feeds with unread counts.
+
+```json
+{
+  "feeds": [
+    { "name": "Designboom", "unread_count": 15 }
+  ]
+}
+```
+
+### GET `/api/design/{feed_name}/items`
+
+Query params:
+- `read` (bool, default `false`) — `false` = unread items (`is_read=false`); `true` = read items (`is_read=true`)
+
+```json
+{
+  "feed_name": "Designboom",
+  "read": false,
+  "items": [
+    {
+      "id": 1,
+      "title": "Studio Drift's kinetic installation at Design Miami",
+      "url": "https://www.designboom.com/art/studio-drift-...",
+      "published_at": "2026-06-29T10:00:00Z",
+      "summary": "Dutch design studio Drift presents a new kinetic sculpture...",
+      "image_url": "https://www.designboom.com/wp-content/uploads/...",
+      "is_read": false
+    }
+  ]
+}
+```
+
+`image_url` is `null` when no image was found in the feed entry (FR-063).
+
+### POST `/api/design/items/{id}/read` and `/api/design/items/{id}/unread`
+
+Sets `is_read` on a `design_items` row.
+
+```json
+{ "id": 1, "is_read": true }
+```
+
+### POST `/api/design/{feed_name}/read-all`
+
+Marks all unread `design_items` for the feed as read. Only called from the Unread toggle state.
+
+```json
+{ "marked_read": 15 }
+```
 
 ### Error Responses (All Endpoints)
 
