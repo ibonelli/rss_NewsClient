@@ -6,6 +6,7 @@ genres, quality, torrent URL, poster, and any ratings available in the feed.
 
 from __future__ import annotations
 
+import html as html_module
 import logging
 import re
 from datetime import datetime
@@ -13,7 +14,7 @@ from html.parser import HTMLParser
 
 import feedparser
 
-__all__ = ["fetch_feed", "fetch_series_feed"]
+__all__ = ["fetch_feed", "fetch_series_feed", "fetch_design_feed"]
 
 logger = logging.getLogger(__name__)
 
@@ -313,6 +314,129 @@ def fetch_news_feed(feed_name: str, feed_url: str) -> list[dict]:
             )
 
     logger.info("Parsed %d news items from feed '%s'", len(items), feed_name)
+    return items
+
+
+# ---------------------------------------------------------------------------
+# Design feed
+# ---------------------------------------------------------------------------
+
+_IMG_SRC_PATTERN = re.compile(r'<img[^>]+src=["\']([^"\']+)["\']', re.IGNORECASE)
+
+
+class _TextExtractor(HTMLParser):
+    """Strip HTML tags and collect plain text."""
+
+    def __init__(self):
+        super().__init__()
+        self._parts: list[str] = []
+
+    def handle_data(self, data: str) -> None:
+        self._parts.append(data)
+
+    def get_text(self) -> str:
+        return " ".join(self._parts).strip()
+
+
+def _strip_html(raw: str) -> str:
+    extractor = _TextExtractor()
+    try:
+        extractor.feed(html_module.unescape(raw or ""))
+    except Exception:
+        pass
+    return extractor.get_text()
+
+
+def _extract_image_url(entry: dict) -> str | None:
+    """Extract image URL best-effort: media:content → enclosure → first <img> in description."""
+    for mc in entry.get("media_content", []):
+        url = (mc.get("url") or "").strip()
+        if url.startswith("http"):
+            return url
+
+    for enc in entry.get("enclosures", []):
+        url = (enc.get("href") or "").strip()
+        mime = enc.get("type", "")
+        if url.startswith("http") and mime.startswith("image/"):
+            return url
+
+    description = entry.get("summary", "") or entry.get("description", "") or ""
+    match = _IMG_SRC_PATTERN.search(description)
+    if match:
+        url = match.group(1).strip()
+        if url.startswith("http"):
+            return url
+
+    return None
+
+
+def _parse_design_entry(feed_name: str, entry: dict) -> dict | None:
+    """Parse a single feedparser entry into a design item dict."""
+    title = (entry.get("title") or "").strip()
+    if not title:
+        logger.debug("Skipping design entry with empty title in feed '%s'", feed_name)
+        return None
+
+    url = entry.get("link", "").strip()
+    if not url:
+        logger.debug("Skipping design entry with no URL: %s", title)
+        return None
+
+    published_at = None
+    if entry.get("published_parsed"):
+        try:
+            published_at = datetime(*entry["published_parsed"][:6])
+        except (TypeError, ValueError):
+            pass
+    elif entry.get("updated_parsed"):
+        try:
+            published_at = datetime(*entry["updated_parsed"][:6])
+        except (TypeError, ValueError):
+            pass
+
+    raw_summary = entry.get("summary", "") or ""
+    summary = _strip_html(raw_summary)
+
+    image_url = _extract_image_url(entry)
+
+    return {
+        "feed_name": feed_name,
+        "title": title,
+        "url": url,
+        "published_at": published_at,
+        "summary": summary,
+        "image_url": image_url,
+    }
+
+
+def fetch_design_feed(feed_name: str, feed_url: str) -> list[dict]:
+    """Fetch and parse a design RSS feed, returning a list of design item dicts."""
+    logger.info("Fetching design feed '%s' from: %s", feed_name, feed_url)
+
+    feed = feedparser.parse(feed_url)
+
+    if feed.bozo:
+        logger.warning("Design feed '%s' parsing had issues: %s", feed_name, feed.bozo_exception)
+
+    if not feed.entries:
+        logger.info("No entries found in design feed '%s'", feed_name)
+        return []
+
+    logger.info("Found %d entries in design feed '%s'", len(feed.entries), feed_name)
+
+    items = []
+    for entry in feed.entries:
+        try:
+            parsed = _parse_design_entry(feed_name, entry)
+            if parsed:
+                items.append(parsed)
+        except Exception as e:
+            logger.warning(
+                "Failed to parse design entry in '%s': %s — %s",
+                feed_name, entry.get("title", "?"), e,
+            )
+
+    logger.info("Parsed %d design items from feed '%s'", len(items), feed_name)
     return items
 
 

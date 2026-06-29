@@ -70,3 +70,9 @@ news_feeds:
         pattern: "(CVE|vulnerability|exploit|breach)"
       - name: "tooling"
         pattern: "(release|update|patch) v?[0-9]"
+
+# Design feeds — remove this section if you don't need design article ingestion.
+# Images are extracted best-effort: media:content → enclosure → first <img> in description.
+design_feeds:
+  - name: "Designboom"
+    url: "https://www.designboom.com/feed/"

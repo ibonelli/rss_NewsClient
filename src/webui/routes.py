@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from collections import defaultdict
 
-from src.common.models import FeedHealth, Filter, Movie, NewsItem, Series, SeriesEpisode
+from src.common.models import DesignItem, FeedHealth, Filter, Movie, NewsItem, Series, SeriesEpisode
 from src.webui.filters import filter_movies, group_by_year
 from src.webui.enrichment import enrich_movie
 
@@ -541,3 +541,98 @@ async def export_feed(
         content=payload,
         headers={"Content-Disposition": f'attachment; filename="{safe_name}-export.json"'},
     )
+
+
+# ---------------------------------------------------------------------------
+# Design feeds
+# ---------------------------------------------------------------------------
+
+def _get_design_feed_cfg(feed_name: str, config: dict) -> dict:
+    design_feeds = config.get("design_feeds", [])
+    feed_cfg = next((f for f in design_feeds if f.get("name") == feed_name), None)
+    if feed_cfg is None:
+        raise HTTPException(status_code=404, detail="Design feed not found")
+    return feed_cfg
+
+
+@router.get("/api/design")
+async def get_design_feeds(
+    session: Session = Depends(_get_session),
+    config: dict = Depends(_get_config),
+):
+    design_feeds = config.get("design_feeds", [])
+    result = []
+    for feed_cfg in design_feeds:
+        feed_name = feed_cfg.get("name", "")
+        if not feed_name:
+            continue
+        unread = (
+            session.query(DesignItem)
+            .filter(DesignItem.feed_name == feed_name, DesignItem.is_read == False)
+            .count()
+        )
+        result.append({"name": feed_name, "unread_count": unread})
+    return {"feeds": result}
+
+
+@router.get("/api/design/{feed_name}/items")
+async def get_design_items(
+    feed_name: str,
+    read: bool = Query(default=False),
+    session: Session = Depends(_get_session),
+    config: dict = Depends(_get_config),
+):
+    _get_design_feed_cfg(feed_name, config)
+    rows = (
+        session.query(DesignItem)
+        .filter(DesignItem.feed_name == feed_name, DesignItem.is_read == read)
+        .order_by(DesignItem.published_at.desc())
+        .all()
+    )
+    items = [
+        {
+            "id": r.id,
+            "title": r.title,
+            "url": r.url,
+            "published_at": r.published_at.isoformat() if r.published_at else None,
+            "summary": r.summary,
+            "image_url": r.image_url,
+            "is_read": r.is_read,
+        }
+        for r in rows
+    ]
+    return {"feed_name": feed_name, "read": read, "items": items}
+
+
+@router.post("/api/design/items/{item_id}/read")
+async def mark_design_item_read(item_id: int, session: Session = Depends(_get_session)):
+    item = session.query(DesignItem).filter(DesignItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Design item not found")
+    item.is_read = True
+    session.commit()
+    return {"id": item.id, "is_read": True}
+
+
+@router.post("/api/design/items/{item_id}/unread")
+async def mark_design_item_unread(item_id: int, session: Session = Depends(_get_session)):
+    item = session.query(DesignItem).filter(DesignItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Design item not found")
+    item.is_read = False
+    session.commit()
+    return {"id": item.id, "is_read": False}
+
+
+@router.post("/api/design/{feed_name}/read-all")
+async def mark_all_design_read(
+    feed_name: str,
+    session: Session = Depends(_get_session),
+    config: dict = Depends(_get_config),
+):
+    _get_design_feed_cfg(feed_name, config)
+    count = session.query(DesignItem).filter(
+        DesignItem.feed_name == feed_name, DesignItem.is_read == False
+    ).update({"is_read": True}, synchronize_session=False)
+    session.commit()
+    return {"marked_read": count}
