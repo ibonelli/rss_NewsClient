@@ -1,4 +1,5 @@
-1. Create a new type of feed which have a design feed. This feed will fetch data from "https://www.designboom.com/feed/". The feed should have a title, a summary, and an image. The design can be similar to movies, but there is no filter. Only read/un-read feed.  
+1. Give routes (accessible by URL) to each type of feed. One for Movies, one for Series, and so on.
+2. We need to work on the parsing of the movie information. Currently the conversion to tags and parsing of data is not working as expected.
 
 ----
 
