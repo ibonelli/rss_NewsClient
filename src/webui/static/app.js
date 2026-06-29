@@ -134,38 +134,40 @@ function MovieCard({ movie, onMarkRead, onMarkUnread, onEnrich }) {
                     <a href=${imdbUrl} target="_blank" rel="noreferrer">${movie.title}</a>
                     <span className="movie-year">(${movie.year})</span>
                 </h3>
-                <div className="movie-genres">
-                    ${movie.genres.map((g, i) => html`<${Badge} key=${i} className="genre-badge">${g}</${Badge}>`)}
-                </div>
-                <div className="movie-qualities">
-                    ${movie.qualities.map((q, i) => html`
-                        <a key=${i} href=${movie.torrent_url} target="_blank" rel="noreferrer" className="quality-link">
-                            <${Badge} className="quality-badge">${q}</${Badge}>
-                        </a>
-                    `)}
-                </div>
-                <div className="movie-ratings">
-                    <${RatingBadge} label="IMDb" value=${movie.imdb_rating} max=${10} />
-                    <${RatingBadge} label="RT" value=${movie.rt_expert_rating} max=${100}
-                        href=${movie.rt_expert_rating != null ? `https://www.rottentomatoes.com/search/?search=${encodeURIComponent(movie.title)}` : null} />
-                    <${RatingBadge} label="Audience" value=${movie.rt_audience_rating} max=${100}
-                        href=${movie.rt_audience_rating != null ? `https://www.rottentomatoes.com/search/?search=${encodeURIComponent(movie.title)}` : null} />
-                </div>
-                ${movie.enrichment_error && html`<p className="enrichment-error">${movie.enrichment_error}</p>`}
-                <div className="movie-actions">
-                    ${onMarkRead && html`
-                        <button className="btn btn-read" onClick=${handleMarkRead} disabled=${loading}>
-                            ${loading ? "..." : "Mark as Read"}
+                <div className="movie-body">
+                    <div className="movie-genres">
+                        ${movie.genres.map((g, i) => html`<${Badge} key=${i} className="genre-badge">${g}</${Badge}>`)}
+                    </div>
+                    <div className="movie-qualities">
+                        ${movie.qualities.map((q, i) => html`
+                            <a key=${i} href=${movie.torrent_url} target="_blank" rel="noreferrer" className="quality-link">
+                                <${Badge} className="quality-badge">${q}</${Badge}>
+                            </a>
+                        `)}
+                    </div>
+                    <div className="movie-ratings">
+                        <${RatingBadge} label="IMDb" value=${movie.imdb_rating} max=${10} />
+                        <${RatingBadge} label="RT" value=${movie.rt_expert_rating} max=${100}
+                            href=${movie.rt_expert_rating != null ? `https://www.rottentomatoes.com/search/?search=${encodeURIComponent(movie.title)}` : null} />
+                        <${RatingBadge} label="Audience" value=${movie.rt_audience_rating} max=${100}
+                            href=${movie.rt_audience_rating != null ? `https://www.rottentomatoes.com/search/?search=${encodeURIComponent(movie.title)}` : null} />
+                    </div>
+                    ${movie.enrichment_error && html`<p className="enrichment-error">${movie.enrichment_error}</p>`}
+                    <div className="movie-actions">
+                        ${onMarkRead && html`
+                            <button className="btn btn-read" onClick=${handleMarkRead} disabled=${loading}>
+                                ${loading ? "..." : "Mark as Read"}
+                            </button>
+                        `}
+                        ${onMarkUnread && html`
+                            <button className="btn btn-secondary btn-sm" onClick=${handleMarkUnread} disabled=${loading}>
+                                ${loading ? "..." : "Mark as Unread"}
+                            </button>
+                        `}
+                        <button className="btn btn-enrich" onClick=${handleEnrich} disabled=${enriching}>
+                            ${enriching ? "Loading..." : "Refresh Ratings"}
                         </button>
-                    `}
-                    ${onMarkUnread && html`
-                        <button className="btn btn-secondary btn-sm" onClick=${handleMarkUnread} disabled=${loading}>
-                            ${loading ? "..." : "Mark as Unread"}
-                        </button>
-                    `}
-                    <button className="btn btn-enrich" onClick=${handleEnrich} disabled=${enriching}>
-                        ${enriching ? "Loading..." : "Refresh Ratings"}
-                    </button>
+                    </div>
                 </div>
             </div>
         </div>

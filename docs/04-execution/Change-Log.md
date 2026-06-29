@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Added — M11: Design Feed (Planned)
+- New `design_items` table: `feed_name`, `title`, `url` (UNIQUE per feed), `published_at`, `summary` (plain text), `image_url` (nullable), `ingested_at`, `is_read`
+- `design_feeds:` config block — list of `{name, url}` entries; same pattern as `news_feeds:`
+- CLI Ingester extended to fetch all configured design feeds; image extracted best-effort from `<media:content>` → `<enclosure>` → first `<img>` in description HTML; summary stored as plain text (HTML stripped)
+- Feed health + 24h email alerting extended to design feeds
+- `GET /api/design` — all configured design feeds with unread counts
+- `GET /api/design/{feed_name}/items?read=false|true` — items filtered by read state
+- `POST /api/design/items/{id}/read` and `/unread` — per-item read tracking
+- `POST /api/design/{feed_name}/read-all` — mark all unread items for a feed as read
+- Design tab in React frontend: card layout (image left, title + summary right); Read/Unread toggle; "Mark All Read" (Unread view only); no filter/flagging; no export
+
+### Changed — Movie Title Styling
+- `.movie-title`: font size 1rem → 1.2rem, weight 600 → 700, flex layout added (matches series title typography); gains `padding: 0.75rem 1rem`, `background: var(--bg-card)`, `border-bottom` to form a card-header section
+- `.movie-title a`: accent color (`var(--accent)`) + no underline by default; hover adds underline and lightens to `var(--accent-hover)` (matches `.series-title a` rules)
+- `.movie-body` (new): wraps genres/qualities/ratings/actions below the title; `background: var(--bg-secondary)` creates a two-tone card — title in `--bg-card` (#0f3460), content in `--bg-secondary` (#16213e), mirroring the series block pattern
+- `.movie-info`: `padding` and `gap` removed (delegated to `.movie-title` and `.movie-body` respectively)
+
 ### Added — Series "Ignore All" Button
 - `POST /api/series/ignore-all` — sets `is_ignored = True` on all non-ignored series; returns `{"ignored": count}`
 - Series tab: "Ignore All" button in the toolbar; visible only when Not-Ignored view is active; clears the series list on success
