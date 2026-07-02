@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 
-cat international_news_el_mundo-export.json > input.json
+cat *.json >> input.json
 #echo "------------" >> input.json
-cat international_news_el_pais-export.json >> input.json
+#cat ./international_news_el_mundo-export.json > input.json
+#cat ./international_news_el_pais-export.json >> input.json
 
-cat input.json | claude --dangerously-skip-permissions --model claude-haiku-4-5 -p "El archivo JSON incluye noticias internacionales de dos medios: 'elmundo.es' & 'elpais.com'. Quiero un resumen de las noticias dando mayor foco a las noticias con más entradas y luego un resumen de las que no se repiten. Escribir el archivo resumen.html con los resultados e incluir en los resumenes referencias a las noticias originales." > resumen_reporte.txt
+cat input.json | claude --dangerously-skip-permissions --model claude-haiku-4-5 -p "El archivo JSON incluye noticias internacionales de dos medios: 'elmundo.es' & 'elpais.com'. Quiero un resumen de las noticias dando mayor foco a las noticias con más entradas y luego un resumen de las que no se repiten. Si una noticia no sé repite, pero es parte de las de mayor foco, dejar en la primera sección de foco. Escribir el archivo resumen.html con los resultados e incluir en los resumenes referencias a las noticias originales. Cada sección debe ser colapsable." > resumen_reporte.txt
 
 rm -y input.json
 
