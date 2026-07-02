@@ -134,38 +134,40 @@ function MovieCard({ movie, onMarkRead, onMarkUnread, onEnrich }) {
                     <a href=${imdbUrl} target="_blank" rel="noreferrer">${movie.title}</a>
                     <span className="movie-year">(${movie.year})</span>
                 </h3>
-                <div className="movie-genres">
-                    ${movie.genres.map((g, i) => html`<${Badge} key=${i} className="genre-badge">${g}</${Badge}>`)}
-                </div>
-                <div className="movie-qualities">
-                    ${movie.qualities.map((q, i) => html`
-                        <a key=${i} href=${movie.torrent_url} target="_blank" rel="noreferrer" className="quality-link">
-                            <${Badge} className="quality-badge">${q}</${Badge}>
-                        </a>
-                    `)}
-                </div>
-                <div className="movie-ratings">
-                    <${RatingBadge} label="IMDb" value=${movie.imdb_rating} max=${10} />
-                    <${RatingBadge} label="RT" value=${movie.rt_expert_rating} max=${100}
-                        href=${movie.rt_expert_rating != null ? `https://www.rottentomatoes.com/search/?search=${encodeURIComponent(movie.title)}` : null} />
-                    <${RatingBadge} label="Audience" value=${movie.rt_audience_rating} max=${100}
-                        href=${movie.rt_audience_rating != null ? `https://www.rottentomatoes.com/search/?search=${encodeURIComponent(movie.title)}` : null} />
-                </div>
-                ${movie.enrichment_error && html`<p className="enrichment-error">${movie.enrichment_error}</p>`}
-                <div className="movie-actions">
-                    ${onMarkRead && html`
-                        <button className="btn btn-read" onClick=${handleMarkRead} disabled=${loading}>
-                            ${loading ? "..." : "Mark as Read"}
+                <div className="movie-body">
+                    <div className="movie-genres">
+                        ${movie.genres.map((g, i) => html`<${Badge} key=${i} className="genre-badge">${g}</${Badge}>`)}
+                    </div>
+                    <div className="movie-qualities">
+                        ${movie.qualities.map((q, i) => html`
+                            <a key=${i} href=${movie.torrent_url} target="_blank" rel="noreferrer" className="quality-link">
+                                <${Badge} className="quality-badge">${q}</${Badge}>
+                            </a>
+                        `)}
+                    </div>
+                    <div className="movie-ratings">
+                        <${RatingBadge} label="IMDb" value=${movie.imdb_rating} max=${10} />
+                        <${RatingBadge} label="RT" value=${movie.rt_expert_rating} max=${100}
+                            href=${movie.rt_expert_rating != null ? `https://www.rottentomatoes.com/search/?search=${encodeURIComponent(movie.title)}` : null} />
+                        <${RatingBadge} label="Audience" value=${movie.rt_audience_rating} max=${100}
+                            href=${movie.rt_audience_rating != null ? `https://www.rottentomatoes.com/search/?search=${encodeURIComponent(movie.title)}` : null} />
+                    </div>
+                    ${movie.enrichment_error && html`<p className="enrichment-error">${movie.enrichment_error}</p>`}
+                    <div className="movie-actions">
+                        ${onMarkRead && html`
+                            <button className="btn btn-read" onClick=${handleMarkRead} disabled=${loading}>
+                                ${loading ? "..." : "Mark as Read"}
+                            </button>
+                        `}
+                        ${onMarkUnread && html`
+                            <button className="btn btn-secondary btn-sm" onClick=${handleMarkUnread} disabled=${loading}>
+                                ${loading ? "..." : "Mark as Unread"}
+                            </button>
+                        `}
+                        <button className="btn btn-enrich" onClick=${handleEnrich} disabled=${enriching}>
+                            ${enriching ? "Loading..." : "Refresh Ratings"}
                         </button>
-                    `}
-                    ${onMarkUnread && html`
-                        <button className="btn btn-secondary btn-sm" onClick=${handleMarkUnread} disabled=${loading}>
-                            ${loading ? "..." : "Mark as Unread"}
-                        </button>
-                    `}
-                    <button className="btn btn-enrich" onClick=${handleEnrich} disabled=${enriching}>
-                        ${enriching ? "Loading..." : "Refresh Ratings"}
-                    </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -450,6 +452,7 @@ function SeriesTab() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [markingAll, setMarkingAll] = useState(false);
+    const [ignoringAll, setIgnoringAll] = useState(false);
 
     const loadSeries = (read, ignored) => {
         setLoading(true);
@@ -507,6 +510,17 @@ function SeriesTab() {
         setMarkingAll(false);
     };
 
+    const handleIgnoreAll = async () => {
+        setIgnoringAll(true);
+        try {
+            await fetch(`/api/series/ignore-all`, { method: "POST" });
+            setSeriesList([]);
+        } catch (e) {
+            console.error("Failed to ignore all series:", e);
+        }
+        setIgnoringAll(false);
+    };
+
     const handleIgnore = async (seriesId) => {
         await fetch(`/api/series/${seriesId}/ignore`, { method: "POST" });
         setSeriesList(prev => prev.filter(s => s.id !== seriesId));
@@ -539,6 +553,11 @@ function SeriesTab() {
                 ${!isRead && html`
                     <button className="btn btn-secondary btn-sm" onClick=${handleMarkAllRead} disabled=${markingAll}>
                         ${markingAll ? "..." : "Mark All Read"}
+                    </button>
+                `}
+                ${!isIgnored && html`
+                    <button className="btn btn-secondary btn-sm" onClick=${handleIgnoreAll} disabled=${ignoringAll}>
+                        ${ignoringAll ? "..." : "Ignore All"}
                     </button>
                 `}
             </div>
@@ -597,6 +616,160 @@ function SeriesTab() {
 }
 
 // ---------------------------------------------------------------------------
+// Design tab
+// ---------------------------------------------------------------------------
+
+function DesignItemCard({ item, isReadView, onRemove }) {
+    const [loading, setLoading] = useState(false);
+
+    const handleClick = async () => {
+        setLoading(true);
+        const action = isReadView ? "unread" : "read";
+        try {
+            await fetch(`/api/design/items/${item.id}/${action}`, { method: "POST" });
+            onRemove(item.id);
+        } catch (e) {
+            console.error("Failed to toggle read:", e);
+        }
+        setLoading(false);
+    };
+
+    return html`
+        <div className="design-card">
+            ${item.image_url && html`
+                <div className="design-image">
+                    <img src=${item.image_url} alt=${item.title} />
+                </div>
+            `}
+            <div className="design-body">
+                <h3 className="design-title">
+                    <a href=${item.url} target="_blank" rel="noreferrer">${item.title}</a>
+                </h3>
+                ${item.published_at && html`<div className="design-date">${new Date(item.published_at).toLocaleDateString()}</div>`}
+                ${item.summary && html`<p className="design-summary">${item.summary}</p>`}
+                <div className="design-actions">
+                    <button className="btn btn-read btn-sm" onClick=${handleClick} disabled=${loading}>
+                        ${loading ? "..." : isReadView ? "Mark Unread" : "Mark Read"}
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function DesignFeedView({ feedName }) {
+    const [isRead, setIsRead] = useState(false);
+    const [items, setItems] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [markingAll, setMarkingAll] = useState(false);
+
+    const loadItems = (read) => {
+        setLoading(true);
+        fetch(`/api/design/${encodeURIComponent(feedName)}/items?read=${read}`)
+            .then(r => r.json())
+            .then(data => { setItems(data.items || []); setLoading(false); })
+            .catch(() => setLoading(false));
+    };
+
+    useEffect(() => { loadItems(false); }, [feedName]);
+
+    const handleToggleRead = () => {
+        const next = !isRead;
+        setIsRead(next);
+        loadItems(next);
+    };
+
+    const handleRemove = (id) => {
+        setItems(prev => prev.filter(item => item.id !== id));
+    };
+
+    const handleMarkAllRead = async () => {
+        setMarkingAll(true);
+        try {
+            await fetch(`/api/design/${encodeURIComponent(feedName)}/read-all`, { method: "POST" });
+            setItems([]);
+        } catch (e) {
+            console.error("Failed to mark all as read:", e);
+        }
+        setMarkingAll(false);
+    };
+
+    return html`
+        <div>
+            <div className="movies-toolbar">
+                <div className="view-toggle">
+                    <button className=${`btn btn-sm ${!isRead ? "btn-active" : "btn-secondary"}`}
+                        onClick=${() => !isRead || handleToggleRead()}>Unread</button>
+                    <button className=${`btn btn-sm ${isRead ? "btn-active" : "btn-secondary"}`}
+                        onClick=${() => isRead || handleToggleRead()}>Read</button>
+                </div>
+                <div className="tab-count">${items.length} items</div>
+                ${!isRead && html`
+                    <button className="btn btn-secondary btn-sm" onClick=${handleMarkAllRead} disabled=${markingAll}>
+                        ${markingAll ? "..." : "Mark All Read"}
+                    </button>
+                `}
+            </div>
+            ${loading
+                ? html`<div className="loading">Loading...</div>`
+                : items.length === 0
+                    ? html`<div className="empty-state">${isRead ? "No read items." : "No items yet."}</div>`
+                    : html`<div className="design-grid">
+                        ${items.map(item => html`<${DesignItemCard} key=${item.id} item=${item} isReadView=${isRead} onRemove=${handleRemove} />`)}
+                    </div>`
+            }
+        </div>
+    `;
+}
+
+function DesignTab() {
+    const [feeds, setFeeds] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [activeFeed, setActiveFeed] = useState(null);
+
+    useEffect(() => {
+        fetch("/api/design")
+            .then(r => r.json())
+            .then(data => {
+                const feedList = data.feeds || [];
+                setFeeds(feedList);
+                if (feedList.length > 0 && !activeFeed) setActiveFeed(feedList[0].name);
+                setLoading(false);
+            })
+            .catch(() => setLoading(false));
+    }, []);
+
+    if (loading) return html`<div className="loading">Loading design feeds...</div>`;
+    if (feeds.length === 0) return html`
+        <div className="empty-state">
+            <p>No design feeds configured. Add <code>design_feeds</code> to your config.yaml.</p>
+        </div>
+    `;
+
+    return html`
+        <div className="news-tab">
+            <div className="news-feed-nav">
+                ${feeds.map(feed => html`
+                    <button
+                        key=${feed.name}
+                        className=${`feed-nav-btn ${activeFeed === feed.name ? "active" : ""}`}
+                        onClick=${() => setActiveFeed(feed.name)}
+                    >
+                        ${feed.name}
+                        ${feed.unread_count > 0 && html`<span className="unread-badge">${feed.unread_count}</span>`}
+                    </button>
+                `)}
+            </div>
+            ${activeFeed && html`
+                <div className="news-feed-content">
+                    <${DesignFeedView} key=${activeFeed} feedName=${activeFeed} />
+                </div>
+            `}
+        </div>
+    `;
+}
+
+// ---------------------------------------------------------------------------
 // Root app with tab navigation
 // ---------------------------------------------------------------------------
 
@@ -626,6 +799,12 @@ function App() {
                     >
                         News
                     </button>
+                    <button
+                        className=${`tab-btn ${activeTab === "design" ? "active" : ""}`}
+                        onClick=${() => setActiveTab("design")}
+                    >
+                        Design
+                    </button>
                 </nav>
             </header>
             <${HealthBanner} />
@@ -633,6 +812,7 @@ function App() {
                 ${activeTab === "movies" && html`<${MoviesTab} />`}
                 ${activeTab === "series" && html`<${SeriesTab} />`}
                 ${activeTab === "news" && html`<${NewsTab} />`}
+                ${activeTab === "design" && html`<${DesignTab} />`}
             </main>
         </div>
     `;

@@ -2,7 +2,7 @@
 
 ## Scope implemented
 
-All milestones M1–M10 are implemented and running in production.
+All milestones M1–M10 are implemented and running in production. M11 (Design Feed) is documented and awaiting implementation.
 
 - **M1 — Ingestion:** CLI ingester, RSS fetch/parse, dedup, storage
 - **M2 — Enrichment:** On-demand OMDb enrichment via web UI; stores `imdb_id` for direct linking
@@ -238,6 +238,60 @@ python src/cli/main.py  # repopulate from live feed
 7. Click "Mark All Read" on Unread + Un-Flagged — confirm only Un-Flagged unread movies disappear
 8. Verify "Mark All Read" does not appear when Read toggle is active
 9. Change a rating threshold in config.yaml and reload — confirm a movie moves between Flagged and Un-Flagged without any DB change
+
+---
+
+## M11 — Design Feed (Planned)
+
+### Scope
+- `DesignItem` SQLAlchemy model + `design_items` table
+- Design feed fetcher in `fetcher.py`: fetch + parse RSS/Atom via feedparser; extract `image_url` best-effort (priority: `media:content` → `enclosure` → first `<img>` in description HTML); strip HTML from summary; skip entries with no title or URL
+- Design item deduplication in `dedup.py` (or inline in `main.py`): upsert by `(url, feed_name)` — skip if already stored
+- Feed health + alerter extended to all `design_feeds` entries in config
+- `GET /api/design`, `GET /api/design/{feed_name}/items`, `POST /api/design/items/{id}/read`, `POST /api/design/items/{id}/unread`, `POST /api/design/{feed_name}/read-all` routes
+- Design tab in React frontend: per-feed selector; card layout (image left, title + summary right); Read/Unread toggle; per-item Mark Read/Unread; "Mark All Read" (Unread view only)
+- `config.yaml` / `config.yaml.example`: `design_feeds:` block
+
+### Files to touch
+- `src/common/models.py` — add `DesignItem` model
+- `src/common/config.py` — load `design_feeds` list
+- `src/cli/fetcher.py` — add `fetch_design_feed()` + image extraction helper
+- `src/cli/main.py` — call design fetcher for each configured feed; update feed health
+- `src/cli/alerter.py` — include design feeds in downtime check
+- `src/webui/routes.py` — add design API endpoints
+- `src/webui/static/app.js` — add `DesignTab` component + per-feed card view
+- `src/webui/static/styles.css` — add `.design-card`, `.design-image`, `.design-body` rules (mirroring movie card layout)
+- `config.yaml` / `config.yaml.example` — add `design_feeds:` block
+
+### Key decisions
+- New `design_items` table rather than reusing `news_items` — `image_url` is a first-class column; avoids polluting news_items with a nullable column only design uses
+- Image extracted from feed only — no HTTP scraping of the article page; null if not found in feed entry
+- No filter/flagging — all items shown, no Flagged/Un-Flagged toggle
+- No export — read/unread tracking only (unlike news feeds)
+- Summary stored as plain text (HTML stripped at ingestion time)
+- Multiple design feeds supported via `design_feeds:` list in config (same pattern as `news_feeds:`)
+- Feed health + 24h alerting consistent with all other feeds
+
+### Edge cases to handle
+- Feed entry with no `<image>` / `<media:content>` / `<enclosure>` → `image_url = null`; card displays without image (FR-063)
+- Feed entry with no summary/description → store empty string
+- Duplicate `(url, feed_name)` on re-ingestion → skip silently (V-031)
+- Design feed unreachable → update `feed_health`, do not crash; alert after 24h (FR-065, FR-066)
+- `<img src>` in description that is a relative URL → store as-is; may not display correctly; acceptable given best-effort approach
+
+### Migration steps (M11)
+- Fresh DB: `create_all()` on startup creates `design_items` table automatically
+- Existing DB: `design_items` table does not exist yet — `create_all()` will add it automatically on next startup (SQLAlchemy `create_all` is additive; existing tables untouched)
+
+### How to test locally (M11)
+1. Add `design_feeds:` block to `config.yaml` with Designboom URL
+2. Run `python src/cli/main.py` — verify `design_items` table populated
+3. Inspect a few rows: confirm `image_url` populated for items with feed images; null for those without
+4. Start web app → Design tab → confirm cards render with image (when available), title linked to article, and summary
+5. Toggle Read/Unread — confirm items move correctly; state survives app restart
+6. Click "Mark All Read" — confirm view clears; switch to Read toggle to see items
+7. Add a second design feed to config, re-run ingester — confirm both feeds appear in tab selector
+8. Simulate design feed downtime → verify email alert fires after 24h
 
 ---
 

@@ -3,9 +3,10 @@
 ## 1) Goal
 - The system shall automatically ingest movie data from the YTS RSS feed and news from configurable RSS/Atom news feeds, provide on-demand rating enrichment for movies, and serve a filterable, read-tracked web-based view grouped appropriately for each content type. All news feeds expose a JSON export/import workflow so an external tool can classify items without any direct AI integration inside the application.
 - The system shall also ingest TV series episode data from the EZTV RSS feed, parse season/episode identifiers, group quality variants, and serve a browsable Series tab with the same read-tracking pattern as movies.
+- The system shall ingest articles from configurable design RSS feeds (e.g., Designboom), extracting title, summary, and image, and serve them in a dedicated Design tab with card-style layout and read/unread tracking.
 
 ## 2) Personas / Users
-- Persona A: Self (sole user) — wants to discover quality movies, track TV series episodes, and read relevant news without manual browsing
+- Persona A: Self (sole user) — wants to discover quality movies, track TV series episodes, read relevant news, and browse design inspiration without manual browsing
 
 ## 3) Functional Requirements
 
@@ -31,6 +32,15 @@
 - ~~**FR-023:** Removed — the `ai_filtered` feed type and `ai_filtered_views` table are no longer used by the application.~~
 - ~~**FR-024:** Removed — Claude CLI prompt configuration is no longer applicable.~~
 - **FR-025:** Feed health tracking MUST extend to all news feeds, recording last successful fetch per feed.
+
+### Ingestion — Design
+- **FR-060:** The system MUST support ingesting from design RSS feeds configurable in `config.yaml` under `design_feeds:`, each with a `name` and `url` field.
+- **FR-061:** Design feeds MUST be fetched on the same ~2h cron cycle as movie, series, and news feeds.
+- **FR-062:** Each design item MUST store: title, article URL, publication date (nullable), source feed name, summary (plain text), image URL (nullable), ingestion timestamp, and read status.
+- **FR-063:** Image URL MUST be extracted best-effort from the RSS entry in this priority order: (1) `<media:content url>`, (2) `<enclosure url>`, (3) first `<img src>` in `<description>` HTML. If no image is found, `image_url` is stored as null; no placeholder is shown.
+- **FR-064:** Deduplication for design items MUST be by `(url, feed_name)` — duplicate items MUST be skipped on re-ingestion (idempotent).
+- **FR-065:** Feed health tracking MUST extend to all configured design feeds, one `feed_health` row per feed.
+- **FR-066:** The system MUST send an email alert if any design feed is unreachable for more than 24 hours (same threshold as all other feeds).
 
 ### Enrichment — Movies
 - **FR-009:** The system MUST extract any ratings provided natively by the RSS feed during ingestion (if available).
@@ -70,6 +80,16 @@
 - **FR-030:** For filtered feeds, the News tab MUST show only items where `matched_filter` is not null, displaying the matched filter name/pattern alongside each item.
 ~~**FR-031:** Removed — the `ai_filtered` feed type has been eliminated.~~
 - ~~**FR-032:** Removed — the raw `news_items` sub-view for AI-filtered feeds is no longer provided.~~
+
+### Web Application — Design
+- **FR-067:** The web application MUST provide a Design tab, distinct from Movies, Series, and News.
+- **FR-068:** The Design tab MUST display items from all configured design feeds; feeds MUST be selectable within the tab (e.g., per-feed sub-view or tab switcher).
+- **FR-069:** Each design feed view MUST display items as cards containing: image (if `image_url` is not null), title linked to the article URL, and summary text. Card layout MUST be visually similar to the Movies card layout (image left, content right).
+- **FR-070:** The Design tab MUST provide a Read/Unread toggle (Unread default) that switches between `is_read=false` and `is_read=true` items without a page reload.
+- **FR-071:** Per-item "Mark Read" (Unread view) and "Mark Unread" (Read view) buttons MUST remove the item from the current view immediately on click, persisted in DB.
+- **FR-072:** A "Mark All Read" button MUST appear only when the Unread toggle is active; it marks all currently unread items for the selected feed as read and clears the view.
+- **FR-073:** There is NO rating filter and NO content filter for design items — all ingested items are shown regardless of content. The Flagged/Un-Flagged toggle from movies MUST NOT appear.
+- **FR-074:** There is NO export feature for design feeds.
 
 ### Export (All News Feeds)
 - **FR-033:** The web application MUST expose `GET /api/news/{feed}/export` for any configured news feed, returning a downloadable JSON file containing only `unread_items` (all `news_items` rows for that feed where `is_read = false`). Each item MUST include its `news_items.id`, title, URL, publication date, and content.
@@ -112,11 +132,12 @@
 - **Series episodes (`series_episodes` table):** FK → series, season number, episode number, quality variants (JSON list of `{quality, torrent_page_url}`), RSS entry date, ingestion timestamp, is_read flag, ignored status
 - **News — `news_items` (all feed types):** title, URL, publication date, source feed name, full content, ingestion timestamp, read status, matched_filter (nullable)
 - **News — `ai_filtered_views`:** legacy table retained on disk; no longer written or read by the application
+- **Design — `design_items`:** title, article URL, publication date (nullable), source feed name, summary (plain text), image URL (nullable), ingestion timestamp, read status
 - Retention: indefinite (database on disk)
 - PII classification: None
 
 ## 6) Integration Requirements
-- Upstream: YTS RSS feed (`https://yts.ag/rss`), EZTV RSS feed (`https://eztv.re/ezrss.xml`), configurable news RSS/Atom feeds, TMDb/OMDb/imdbapi.dev or scraping for movie ratings
+- Upstream: YTS RSS feed (`https://yts.ag/rss`), EZTV RSS feed (`https://eztv.re/ezrss.xml`), configurable news RSS/Atom feeds, configurable design RSS feeds (e.g., `https://www.designboom.com/feed/`), TMDb/OMDb/imdbapi.dev or scraping for movie ratings
 - Downstream: Local SMTP for email alerts
 - Contracts: RSS XML format (subject to change without notice); export JSON schema defined in FR-033
 
@@ -141,6 +162,13 @@
 - **AC-018:** Ignoring a series removes it from the Not-Ignored view; it appears only when the Ignored toggle is active.
 - **AC-019:** New episodes ingested for an ignored series do not appear in the Not-Ignored views — they are accessible only via the Ignored toggle.
 - **AC-020:** Switching the Unread/Read and Not-Ignored/Ignored toggles independently produces the correct filtered episode list without a page reload.
+
+- **AC-021:** Design items from configured design feeds appear in the Design tab, displayed as cards with image (if available), title linked to the article URL, and summary.
+- **AC-022:** Items without an image in the RSS feed appear as cards with title and summary only — no placeholder is shown.
+- **AC-023:** The Read/Unread toggle works correctly for design items; read status survives app restart.
+- **AC-024:** "Mark All Read" on the Unread view clears all unread items for the selected feed; no export button is present.
+- **AC-025:** An email alert fires if any configured design feed is unreachable for >24 hours.
+- **AC-026:** Multiple design feeds configured in `config.yaml` are all ingested and selectable in the Design tab independently.
 
 ## 8) Open Questions
 - **Q-001:** Which free rating source is most reliable/complete for movies? (TMDb, OMDb free tier, imdbapi.dev, scraping?)

@@ -171,6 +171,24 @@ body {
 }
 
 .movie-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.movie-title {
+    font-size: 1.2rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+}
+
+.movie-body {
+    background: var(--bg-secondary);
     padding: 1rem;
     flex: 1;
     display: flex;
@@ -178,10 +196,14 @@ body {
     gap: 0.5rem;
 }
 
-.movie-title {
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--text-primary);
+.movie-title a {
+    color: var(--accent);
+    text-decoration: none;
+}
+
+.movie-title a:hover {
+    color: var(--accent-hover);
+    text-decoration: underline;
 }
 
 .movie-year {
@@ -674,4 +696,78 @@ body {
 .btn-sm {
     padding: 0.2rem 0.6rem;
     font-size: 0.8rem;
+}
+
+/* Design tab */
+.design-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 1.2rem;
+}
+
+.design-card {
+    display: flex;
+    background-color: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.design-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.design-image {
+    flex-shrink: 0;
+    width: 220px;
+}
+
+.design-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.design-body {
+    background: var(--bg-secondary);
+    padding: 1rem;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.design-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+}
+
+.design-title a {
+    color: var(--accent);
+    text-decoration: none;
+}
+
+.design-title a:hover {
+    color: var(--accent-hover);
+    text-decoration: underline;
+}
+
+.design-date {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.design-summary {
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    line-height: 1.5;
+    flex: 1;
+}
+
+.design-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: auto;
 }

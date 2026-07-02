@@ -1,6 +1,6 @@
-1. The Series feed needs to have a button "ignore all" like we have a "mark all as read".
-
-2. Create a new type of feed which have a design feed. This feed will fetch data from "https://www.designboom.com/feed/". The feed should have a title, a summary, and an image. The design can be similar to movies, but there is no filter. Only read/un-read feed.  
+1. Give routes (accessible by URL) to each type of feed. One for Movies, one for Series, and so on.
+2. We need to work on the parsing of the movie information. Currently the conversion to tags and parsing of data is not working as expected.
+3. We now have "Mark as Read" and "Ignore". Add same buttons with "all above" & "all below", for each: "Ignore", "Ignore all above". "Ignore all below".
 
 ----
 

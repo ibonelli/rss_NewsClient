@@ -4,9 +4,9 @@
 
 | Component | Responsibility | Runtime |
 |---|---|---|
-| **CLI Ingester** (`src/cli/main.py`) | Fetch all RSS/Atom feeds (movie + series + news), parse, deduplicate (movies and series), store raw data to `movies`, `series`, `series_episodes`, and `news_items`, update feed health | Cron-triggered process (runs and exits, step 1) |
+| **CLI Ingester** (`src/cli/main.py`) | Fetch all RSS/Atom feeds (movie + series + news + design), parse, deduplicate (movies and series), store raw data to `movies`, `series`, `series_episodes`, `news_items`, and `design_items`, update feed health | Cron-triggered process (runs and exits, step 1) |
 | **CLI Filter Processor** (`src/cli/filter.py`) | Sync `filters` table from config; for each `filtered` feed, regex-match `news_items` and set `matched_filter_id` on matches — never deletes rows | Cron-triggered process (runs and exits, step 2 — immediately after Ingester) |
-| **FastAPI Web UI** (`src/webui/main.py`) | JSON API for movies, series, and news (filtering, read-tracking, on-demand enrichment, export); static React frontend | Long-running local process (on-demand) |
+| **FastAPI Web UI** (`src/webui/main.py`) | JSON API for movies, series, news, and design (filtering, read-tracking, on-demand enrichment, export); static React frontend | Long-running local process (on-demand) |
 | **Database** (MySQL/SQLite) | Persistent state for all data | Shared resource |
 | **Config file** (`config.yaml`) | Feed definitions, filter patterns, rating thresholds, connection strings | Shared resource (read by both processes) |
 
@@ -31,9 +31,9 @@ src/
 │       ├── app.js      # React components (JSX via Babel CDN)
 │       └── styles.css
 └── common/
-    ├── models.py       # SQLAlchemy models (all tables, shared)
+    ├── models.py       # SQLAlchemy models (all tables, shared; includes DesignItem)
     ├── db.py           # Engine/session factory, init_db()
-    └── config.py       # YAML config loading + validation
+    └── config.py       # YAML config loading + validation (includes design_feeds)
 ```
 
 ## 2) Interfaces
@@ -83,15 +83,25 @@ src/
 | POST | `/api/news/items/{id}/unread` | Mark `news_items` row as unread |
 | GET | `/api/news/{feed_name}/export` | Download JSON with `unread_items` for the feed (FR-033) |
 
+**Design**
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/design` | All design feeds with unread counts |
+| GET | `/api/design/{feed_name}/items` | Items for a feed filtered by `read` bool (default `false`) |
+| POST | `/api/design/items/{id}/read` | Mark design item as read |
+| POST | `/api/design/items/{id}/unread` | Mark design item as unread |
+| POST | `/api/design/{feed_name}/read-all` | Mark all unread items for the feed as read |
+
 ### Database Interface
 
 All three processes connect via SQLAlchemy using `database.url` from `config.yaml`.
 
 | Process | Reads | Writes |
 |---|---|---|
-| CLI Ingester | — | `movies`, `series`, `series_episodes`, `news_items`, `feed_health` |
+| CLI Ingester | — | `movies`, `series`, `series_episodes`, `news_items`, `design_items`, `feed_health` |
 | CLI Filter Processor | `news_items`, `filters` | `filters` (sync), `news_items.matched_filter_id` |
-| FastAPI Web UI | `movies`, `series`, `series_episodes`, `news_items`, `feed_health`, `filters` | `movies.is_read`, `movies` (enrichment), `series.is_ignored`, `series_episodes.is_read`, `news_items.is_read` |
+| FastAPI Web UI | `movies`, `series`, `series_episodes`, `news_items`, `design_items`, `feed_health`, `filters` | `movies.is_read`, `movies` (enrichment), `series.is_ignored`, `series_episodes.is_read`, `news_items.is_read`, `design_items.is_read` |
 
 **Concurrency:** SQLite has a single-writer limitation — acceptable since Ingester and Filter Processor run sequentially in the same cron chain, and web app writes are infrequent (read-tracking only). MySQL handles concurrent reads and writes without issue.
 
@@ -123,6 +133,7 @@ Not applicable (single user, local machine). MySQL handles concurrent reads well
 | EZTV series feed down | `feed_health` threshold exceeded for `eztv_series` | No new series episodes | Auto-retry next cron cycle; email alert after 24h |
 | EZTV title format changed | Parser logs skipped entries (V-027) | Some episodes not ingested | Manual regex update in `fetcher.py` |
 | News RSS feed down | Same — per-feed `feed_health` row | No new items for that feed | Auto-retry next cron cycle; email alert after 24h |
+| Design RSS feed down | Same — per-feed `feed_health` row | No new design items for that feed | Auto-retry next cron cycle; email alert after 24h |
 | RSS/Atom format changed | Parser logs warning on unexpected structure | Some items not ingested | Manual parser update |
 | Enrichment API unavailable | HTTP timeout/error caught | Movie shows without ratings | User retries via "refresh ratings" button |
 | Database unreachable (MySQL) | SQLAlchemy connection error on startup | Both processes fail to start | Check MySQL service and connection string |

@@ -9,7 +9,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-__all__ = ["Base", "Movie", "Series", "SeriesEpisode", "FeedHealth", "NewsItem", "Filter", "AIFilteredView"]
+__all__ = ["Base", "Movie", "Series", "SeriesEpisode", "FeedHealth", "NewsItem", "Filter", "AIFilteredView", "DesignItem"]
 
 
 class Base(DeclarativeBase):
@@ -133,6 +133,27 @@ class Filter(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     pattern: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class DesignItem(Base):
+    """An article fetched from a configurable design RSS feed."""
+
+    __tablename__ = "design_items"
+    __table_args__ = (
+        Index("ix_design_items_url_feed", "url", "feed_name", unique=True),
+        Index("ix_design_items_feed_name", "feed_name"),
+        Index("ix_design_items_is_read", "is_read"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    feed_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    url: Mapped[str] = mapped_column(String(2000), nullable=False)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    image_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    ingested_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
 class AIFilteredView(Base):
