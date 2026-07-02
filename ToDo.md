@@ -1,5 +1,6 @@
 1. Give routes (accessible by URL) to each type of feed. One for Movies, one for Series, and so on.
 2. We need to work on the parsing of the movie information. Currently the conversion to tags and parsing of data is not working as expected.
+3. We now have "Mark as Read" and "Ignore". Add same buttons with "all above" & "all below", for each: "Ignore", "Ignore all above". "Ignore all below".
 
 ----
 
