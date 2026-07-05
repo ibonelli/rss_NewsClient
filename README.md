@@ -1,6 +1,13 @@
 # rss_NewsClient
 
+## TLDR
+
 The fetch CLI is designed to work with cron. For example running it every 15 min via cron means that it fetches feeds every 15 min. Deduplicating in the DB (already-seen items are skipped by url+feed_name uniqueness check).
+
+```bash
+.venv/bin/python3 src/cli/main.py
+.venv/bin/python3 src/webui/main.py
+```
 
 ## First install & setup (using MySQL)
 
@@ -75,6 +82,23 @@ http://127.0.0.1:8080/api/health
 http://127.0.0.1:8080/api/movies
 http://127.0.0.1:8080/api/series
 ```
+
+## UI page routes
+
+Each feed type has its own bookmarkable URL (client-side routed, backed by
+FastAPI routes that serve the same SPA shell):
+
+```
+http://127.0.0.1:8080/movies
+http://127.0.0.1:8080/series
+http://127.0.0.1:8080/news
+http://127.0.0.1:8080/news/<feed name>
+http://127.0.0.1:8080/design
+http://127.0.0.1:8080/design/<feed name>
+```
+
+`<feed name>` matches a `name` entry under `news_feeds` / `design_feeds` in
+`config.yaml` (URL-encoded, e.g. spaces as `%20`).
 
 ## Claude AI filtering
 

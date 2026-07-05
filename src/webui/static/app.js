@@ -2,6 +2,48 @@ const { useState, useEffect } = React;
 const html = htm.bind(React.createElement);
 
 // ---------------------------------------------------------------------------
+// Client-side router — one URL per feed type (/movies, /series, /news,
+// /news/{feed_name}, /design, /design/{feed_name}) using the History API.
+// ---------------------------------------------------------------------------
+
+const TABS = ["movies", "series", "news", "design"];
+
+function parseLocation() {
+    const parts = window.location.pathname.split("/").filter(Boolean);
+    const tab = TABS.includes(parts[0]) ? parts[0] : "movies";
+    const feedName = parts.length > 1 ? decodeURIComponent(parts[1]) : null;
+    return { tab, feedName };
+}
+
+function navigate(path) {
+    if (window.location.pathname !== path) {
+        window.history.pushState({}, "", path);
+        window.dispatchEvent(new Event("pushstate"));
+    }
+}
+
+function replaceLocation(path) {
+    if (window.location.pathname !== path) {
+        window.history.replaceState({}, "", path);
+        window.dispatchEvent(new Event("pushstate"));
+    }
+}
+
+function useLocation() {
+    const [location, setLocation] = useState(parseLocation());
+    useEffect(() => {
+        const handler = () => setLocation(parseLocation());
+        window.addEventListener("popstate", handler);
+        window.addEventListener("pushstate", handler);
+        return () => {
+            window.removeEventListener("popstate", handler);
+            window.removeEventListener("pushstate", handler);
+        };
+    }, []);
+    return location;
+}
+
+// ---------------------------------------------------------------------------
 // Shared utilities
 // ---------------------------------------------------------------------------
 
@@ -390,10 +432,10 @@ function FilteredFeedView({ feedName }) {
 // News tab — feed list + active feed view
 // ---------------------------------------------------------------------------
 
-function NewsTab() {
+function NewsTab({ initialFeedName }) {
     const [feeds, setFeeds] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [activeFeed, setActiveFeed] = useState(null);
+    const [activeFeed, setActiveFeed] = useState(initialFeedName || null);
 
     useEffect(() => {
         fetch("/api/news")
@@ -401,11 +443,20 @@ function NewsTab() {
             .then(data => {
                 const feedList = data.feeds || [];
                 setFeeds(feedList);
-                if (feedList.length > 0 && !activeFeed) setActiveFeed(feedList[0].name);
+                if (feedList.length > 0 && !activeFeed) {
+                    const fallback = feedList[0].name;
+                    setActiveFeed(fallback);
+                    replaceLocation(`/news/${encodeURIComponent(fallback)}`);
+                }
                 setLoading(false);
             })
             .catch(() => setLoading(false));
     }, []);
+
+    const handleSelectFeed = (feedName) => {
+        setActiveFeed(feedName);
+        navigate(`/news/${encodeURIComponent(feedName)}`);
+    };
 
     if (loading) return html`<div className="loading">Loading news feeds...</div>`;
     if (feeds.length === 0) return html`
@@ -423,7 +474,7 @@ function NewsTab() {
                     <button
                         key=${feed.name}
                         className=${`feed-nav-btn ${activeFeed === feed.name ? "active" : ""}`}
-                        onClick=${() => setActiveFeed(feed.name)}
+                        onClick=${() => handleSelectFeed(feed.name)}
                     >
                         ${feed.name}
                         ${feed.unread_count > 0 && html`<span className="unread-badge">${feed.unread_count}</span>`}
@@ -722,10 +773,10 @@ function DesignFeedView({ feedName }) {
     `;
 }
 
-function DesignTab() {
+function DesignTab({ initialFeedName }) {
     const [feeds, setFeeds] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [activeFeed, setActiveFeed] = useState(null);
+    const [activeFeed, setActiveFeed] = useState(initialFeedName || null);
 
     useEffect(() => {
         fetch("/api/design")
@@ -733,11 +784,20 @@ function DesignTab() {
             .then(data => {
                 const feedList = data.feeds || [];
                 setFeeds(feedList);
-                if (feedList.length > 0 && !activeFeed) setActiveFeed(feedList[0].name);
+                if (feedList.length > 0 && !activeFeed) {
+                    const fallback = feedList[0].name;
+                    setActiveFeed(fallback);
+                    replaceLocation(`/design/${encodeURIComponent(fallback)}`);
+                }
                 setLoading(false);
             })
             .catch(() => setLoading(false));
     }, []);
+
+    const handleSelectFeed = (feedName) => {
+        setActiveFeed(feedName);
+        navigate(`/design/${encodeURIComponent(feedName)}`);
+    };
 
     if (loading) return html`<div className="loading">Loading design feeds...</div>`;
     if (feeds.length === 0) return html`
@@ -753,7 +813,7 @@ function DesignTab() {
                     <button
                         key=${feed.name}
                         className=${`feed-nav-btn ${activeFeed === feed.name ? "active" : ""}`}
-                        onClick=${() => setActiveFeed(feed.name)}
+                        onClick=${() => handleSelectFeed(feed.name)}
                     >
                         ${feed.name}
                         ${feed.unread_count > 0 && html`<span className="unread-badge">${feed.unread_count}</span>`}
@@ -774,7 +834,10 @@ function DesignTab() {
 // ---------------------------------------------------------------------------
 
 function App() {
-    const [activeTab, setActiveTab] = useState("movies");
+    const location = useLocation();
+    const { tab: activeTab, feedName } = location;
+
+    const handleTabClick = (tab) => navigate(`/${tab}`);
 
     return html`
         <div className="app">
@@ -783,25 +846,25 @@ function App() {
                 <nav className="tab-nav">
                     <button
                         className=${`tab-btn ${activeTab === "movies" ? "active" : ""}`}
-                        onClick=${() => setActiveTab("movies")}
+                        onClick=${() => handleTabClick("movies")}
                     >
                         Movies
                     </button>
                     <button
                         className=${`tab-btn ${activeTab === "series" ? "active" : ""}`}
-                        onClick=${() => setActiveTab("series")}
+                        onClick=${() => handleTabClick("series")}
                     >
                         Series
                     </button>
                     <button
                         className=${`tab-btn ${activeTab === "news" ? "active" : ""}`}
-                        onClick=${() => setActiveTab("news")}
+                        onClick=${() => handleTabClick("news")}
                     >
                         News
                     </button>
                     <button
                         className=${`tab-btn ${activeTab === "design" ? "active" : ""}`}
-                        onClick=${() => setActiveTab("design")}
+                        onClick=${() => handleTabClick("design")}
                     >
                         Design
                     </button>
@@ -811,8 +874,8 @@ function App() {
             <main className="tab-content">
                 ${activeTab === "movies" && html`<${MoviesTab} />`}
                 ${activeTab === "series" && html`<${SeriesTab} />`}
-                ${activeTab === "news" && html`<${NewsTab} />`}
-                ${activeTab === "design" && html`<${DesignTab} />`}
+                ${activeTab === "news" && html`<${NewsTab} key=${feedName} initialFeedName=${feedName} />`}
+                ${activeTab === "design" && html`<${DesignTab} key=${feedName} initialFeedName=${feedName} />`}
             </main>
         </div>
     `;

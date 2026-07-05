@@ -77,6 +77,19 @@ async def serve_index():
     return FileResponse(str(_INDEX_HTML))
 
 
+# Bookmarkable/shareable per-feed-type URLs. The SPA reads the path client-side
+# (see parseLocation() in app.js) to pick the active tab and, for news/design,
+# the active sub-feed — the server just needs to return the same shell for all of them.
+@router.get("/movies")
+@router.get("/series")
+@router.get("/news")
+@router.get("/news/{feed_name}")
+@router.get("/design")
+@router.get("/design/{feed_name}")
+async def serve_spa_route(feed_name: str | None = None):
+    return FileResponse(str(_INDEX_HTML))
+
+
 # ---------------------------------------------------------------------------
 # Movies
 # ---------------------------------------------------------------------------

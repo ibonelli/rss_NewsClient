@@ -43,6 +43,7 @@ This is a two-process Python application called **pelis-feed** for tracking movi
 - JSON API at `/api/movies`, `/api/movies/{id}/read`, `/api/movies/{id}/unread`, `/api/movies/{id}/enrich`, `/api/health`
 - On-demand enrichment calls OMDb API to fetch IMDb and Rotten Tomatoes ratings (`enrichment.py`)
 - Filtering and grouping logic (`filters.py`) runs at read time against config-driven thresholds
+- Each feed type has its own bookmarkable page route — `/movies`, `/series`, `/news`, `/news/{feed_name}`, `/design`, `/design/{feed_name}` — all served by `routes.py:serve_spa_route` (same `index.html` shell). The active tab/feed is derived client-side from `window.location.pathname` (`parseLocation()` in `app.js`) and kept in sync with the URL bar via the History API (`navigate()`/`replaceLocation()`), so no server-side templating or per-route data is involved
 
 ### Shared layer (`src/common/`)
 - `models.py` — SQLAlchemy 2.0 ORM: `Movie` and `FeedHealth` tables
