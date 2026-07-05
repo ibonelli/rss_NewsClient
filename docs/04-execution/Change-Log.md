@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Fixed — Movie Genre-Fusion Parsing Bug + Size/Runtime/Plot (ADR-015)
+- Fixed `_DescriptionParser`/`_parse_entry` (`src/cli/fetcher.py`): the genre regex previously terminated only on a literal `Rating:` substring or end-of-string, which never matched again since `Rating:` appears *before* `Genre:` in the real YTS layout — this fused the last genre together with Size/Runtime/plot text (reported live example: "Crime 101" — last genre was `"Thriller Size: 1.26 GB Runtime: 2hr 20 min <full plot>"`). Genre is now bounded by a lookahead over every label that can actually follow it.
+- Added Size, Runtime, and Plot extraction from the `<description>` HTML (previously discarded entirely): Size and Runtime are bounded by their own value shape; Plot is whatever text follows the last recognized label.
+- `Movie.qualities` changes shape from a flat list of strings (`["1080p"]`) to `[{"quality": "1080p", "size": "1.26 GB"}]` — Size is a property of the quality/format, mirroring the existing `SeriesEpisode.qualities` pattern. `dedup.py:_merge_qualities` now unions by `quality` key (previously a flat string set-union).
+- New `Movie.runtime` (raw string, e.g. `"2hr 20 min"`) and `Movie.plot` (full synopsis) columns.
+- `tools/migrate_004_movie_runtime_plot.sh`: adds both columns, backfills legacy flat-string `qualities` to `{quality, size: null}` objects, and **repairs already-corrupted `genres`/`runtime`/`plot` on existing rows** by reconstructing the original text from what was stored (the corruption was a mis-split, not data loss) — fixed 30 of 40 existing movies in the live database, including the reported "Crime 101" row.
+- `_movie_to_dict` (`routes.py`) and `MovieCard` (`app.js`) updated to serialize/render `runtime` and `plot`, and quality badges now show size (e.g. "1080p · 1.26 GB").
+- New regression test `tests/test_fetcher.py` (stdlib `unittest`, no new dependency) covering the exact reported bug plus size/runtime-absent edge cases.
+- See FR-078–FR-080
+
+### Added — Per-Feed-Type URL Routes (ADR-014)
+- FastAPI now serves the SPA shell at `/movies`, `/series`, `/news`, `/news/{feed_name}`, `/design`, `/design/{feed_name}` in addition to `/` (`routes.py:serve_spa_route`) — no per-route rendering, same `index.html` for all
+- React frontend (`app.js`) gained a small History-API router: `parseLocation()` derives `{tab, feedName}` from `window.location.pathname` (falls back to Movies on unrecognized paths); `navigate()`/`replaceLocation()` push/replace the URL; a `popstate` listener keeps state in sync with browser back/forward
+- Tab buttons and News/Design feed selection now update the URL bar; direct navigation to any of the above URLs loads with the right tab/feed active
+- See FR-075–FR-077
+
 ### Added — M11: Design Feed (Planned)
 - New `design_items` table: `feed_name`, `title`, `url` (UNIQUE per feed), `published_at`, `summary` (plain text), `image_url` (nullable), `ingested_at`, `is_read`
 - `design_feeds:` config block — list of `{name, url}` entries; same pattern as `news_feeds:`

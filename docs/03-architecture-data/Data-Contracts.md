@@ -48,11 +48,13 @@ class Movie(Base):
     year: int                         # NOT NULL, 4-digit year
     genres: str                       # NOT NULL, JSON array as text e.g. '["Action","Thriller"]'
     torrent_url: str                  # NOT NULL, UNIQUE — primary dedup key
-    qualities: str                    # JSON array as text e.g. '["720p","1080p"]'
+    qualities: str                    # JSON array as text e.g. '[{"quality": "720p", "size": "850 MB"}, {"quality": "1080p", "size": "1.26 GB"}]' — size may be null if not parsed from the description
     imdb_rating: float | None         # 0.0–10.0, nullable (not yet enriched)
     rt_expert_rating: int | None      # 0–100, nullable
     rt_audience_rating: int | None    # 0–100, nullable
     poster_url: str | None            # nullable, URL to movie poster
+    runtime: str | None               # nullable, raw runtime string as scraped e.g. "2hr 20 min" — format not normalized
+    plot: str | None                  # nullable, full synopsis text (not truncated)
     feed_entry_date: datetime         # when the RSS entry was published
     enrichment_date: datetime | None  # when ratings were last fetched
     enrichment_error: str | None      # last enrichment error message, nullable
@@ -216,7 +218,7 @@ The `ai_filtered_views` table remains in the database schema but is no longer wr
 - **V-002:** `year` MUST be a 4-digit integer between 1900 and current year + 1
 - **V-003:** `genres` MUST be a valid JSON array with at least one non-empty string
 - **V-004:** `torrent_url` MUST be a non-empty string
-- **V-005:** `qualities` MUST be a valid JSON array
+- **V-005:** `qualities` MUST be a valid JSON array of `{quality, size}` objects (`size` is optional/nullable); validation is intentionally loose — it only checks that the value is a list, not the shape of each element
 
 ### Movie (on enrichment)
 - **V-006:** `imdb_rating`, if present, MUST be between 0.0 and 10.0
@@ -225,8 +227,10 @@ The `ai_filtered_views` table remains in the database schema but is no longer wr
 
 ### Movie deduplication
 - **V-009:** On insert, check for existing record with same `torrent_url`
-- **V-010:** If match found, merge `qualities` arrays (union of available qualities)
+- **V-010:** If match found, merge `qualities` arrays (union of available qualities, keyed by `quality` — matching entries keep their original `size`)
 - **V-011:** If no URL match but same `title` + `year`, treat as same movie — merge qualities
+
+`runtime` and `plot` are unconstrained optional metadata — parsed best-effort from the description, never rejected/validated, and not subject to any V-rule.
 
 ### Series (on ingestion)
 - **V-021:** `title` MUST NOT be empty after normalization (stripping dots/underscores/dashes)
@@ -373,7 +377,7 @@ Log: `"Feed <name> export: N unread items"` (NFR-006).
 
 ## 7) RSS Feed Contract (External — Not Controlled)
 
-**Movie feed:** `https://yts.ag/rss` — RSS 2.0 XML. Fields per `<item>`: `<title>`, `<link>`, `<pubDate>`, `<description>` (HTML blob with poster/genre/rating), `<enclosure>` (torrent URL). Parser extracts title/year/quality from `<title>` via regex; genre/IMDb/poster from `<description>` HTML.
+**Movie feed:** `https://yts.ag/rss` — RSS 2.0 XML. Fields per `<item>`: `<title>`, `<link>`, `<pubDate>`, `<description>` (HTML blob with poster/genre/rating/size/runtime/plot), `<enclosure>` (torrent URL). Parser extracts title/year/quality from `<title>` via regex; genre/IMDb rating/poster/size/runtime/plot from `<description>` HTML. The description's real layout order is IMDB Rating → Genre → Size → Runtime → plot synopsis; genre/size/runtime are each bounded by their own regex (genre via a lookahead on the labels that can follow it, size/runtime via their own value shape) rather than a single shared terminator, since the description text is flattened to one line with no tag/line-break structure preserved.
 
 **Series feed:** `https://eztv.re/ezrss.xml` — RSS 2.0 XML. Fields per `<item>`: `<title>` (series name + S##E## + quality, e.g. `Show Name S01E05 720p WEB` or `Show.Name.S01E05.720p.WEB`), `<link>` (torrent page URL), `<pubDate>`. No IMDb ID element is present in the feed — `series.imdb_id` is always stored as null; the UI falls back to an IMDb title-search URL (see ADR-010). Parser extracts series name/season/episode/quality via regex on `<title>`; torrent page URL from `<link>`. Entries with no S##E## pattern are skipped (V-027).
 
@@ -408,13 +412,18 @@ The Flagged/Un-Flagged split is computed at query time from config thresholds; n
           "title": "Movie Name",
           "year": 2026,
           "genres": ["Action", "Thriller"],
-          "qualities": ["720p", "1080p"],
+          "qualities": [
+            {"quality": "720p", "size": "850 MB"},
+            {"quality": "1080p", "size": "1.26 GB"}
+          ],
           "torrent_url": "https://...",
           "imdb_id": "tt1234567",
           "imdb_rating": 7.2,
           "rt_expert_rating": 85,
           "rt_audience_rating": 78,
           "poster_url": "https://...",
+          "runtime": "2hr 20 min",
+          "plot": "A meticulous jewel thief risks his flawless record...",
           "feed_entry_date": "2026-05-20T14:30:00Z",
           "enrichment_date": "2026-05-20T15:00:00Z",
           "enrichment_error": null,

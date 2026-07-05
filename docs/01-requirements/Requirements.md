@@ -15,6 +15,9 @@
 - **FR-002:** The system MUST store ingested movie data in a SQLite or MySQL database.
 - **FR-003:** The system MUST handle duplicate entries (same name or same torrent URL) by appending new information (e.g., different quality/resolution) to the existing movie record rather than creating a new entry.
 - **FR-008:** The system MUST track feed health by recording the timestamp of the last successful fetch for each configured feed (movie, series, and news).
+- **FR-078:** The system MUST correctly extract each genre as a standalone tag from the `<description>` HTML, with no genre value ever containing fused Size/Runtime/plot text (see ADR-015).
+- **FR-079:** The system MUST extract, when present in the description: Size (stored per quality/format variant as `{quality, size}`, not as a flat movie field or genre), Runtime (raw string, not normalized), and Plot (full untruncated synopsis). Absence of any of these MUST NOT cause the entry to be rejected.
+- **FR-080:** `Movie.qualities` MUST be a JSON array of `{quality, size}` objects; merging a duplicate movie MUST union quality variants by `quality` name without discarding an existing variant's `size` (mirrors the existing `SeriesEpisode.qualities` merge pattern).
 
 ### Ingestion — Series
 - **FR-039:** The system MUST fetch RSS data from `https://eztv.re/ezrss.xml` on the same ~2h cron schedule as movies.
@@ -90,6 +93,11 @@
 - **FR-072:** A "Mark All Read" button MUST appear only when the Unread toggle is active; it marks all currently unread items for the selected feed as read and clears the view.
 - **FR-073:** There is NO rating filter and NO content filter for design items — all ingested items are shown regardless of content. The Flagged/Un-Flagged toggle from movies MUST NOT appear.
 - **FR-074:** There is NO export feature for design feeds.
+
+### Web Application — Navigation / URL Routing
+- **FR-075:** The web application MUST expose a distinct, bookmarkable URL per feed type: `/movies`, `/series`, `/news`, `/design`. Navigating directly to any of these URLs MUST load the app with the corresponding tab active.
+- **FR-076:** The News and Design tabs MUST additionally support deep-linking to a specific configured feed via `/news/{feed_name}` and `/design/{feed_name}`, where `feed_name` matches a `name` entry under `news_feeds` / `design_feeds` in `config.yaml` (URL-encoded).
+- **FR-077:** Clicking a tab or selecting a News/Design sub-feed MUST update the browser URL to match (without a full page reload), and browser back/forward MUST restore the previously active tab/feed. Visiting an unrecognized path MUST fall back to the Movies tab.
 
 ### Export (All News Feeds)
 - **FR-033:** The web application MUST expose `GET /api/news/{feed}/export` for any configured news feed, returning a downloadable JSON file containing only `unread_items` (all `news_items` rows for that feed where `is_read = false`). Each item MUST include its `news_items.id`, title, URL, publication date, and content.
