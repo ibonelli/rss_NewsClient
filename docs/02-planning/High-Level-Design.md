@@ -111,11 +111,13 @@ movies
 ├── year
 ├── genres (JSON array)
 ├── torrent_url
-├── qualities (JSON array: ["720p", "1080p", "2160p"])
+├── qualities (JSON array: [{quality, size}])
 ├── imdb_rating (nullable float)
 ├── rt_expert_rating (nullable int, 0-100)
 ├── rt_audience_rating (nullable int, 0-100)
 ├── poster_url (nullable)
+├── runtime (nullable, raw string e.g. "2hr 20 min")
+├── plot (nullable, full synopsis text)
 ├── feed_entry_date
 ├── enrichment_date (nullable)
 ├── is_read (boolean, default false)
