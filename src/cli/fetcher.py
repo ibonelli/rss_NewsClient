@@ -26,6 +26,20 @@ _TITLE_PATTERN = re.compile(
 _QUALITY_PATTERN = re.compile(r"\[(\d{3,4}p)\]")
 _YEAR_PATTERN = re.compile(r"\((\d{4})\)")
 
+# Regex patterns for parsing YTS RSS <description> HTML (flattened to one
+# space-joined text blob — see _DescriptionParser.extract_metadata). Real
+# layout order is: IMDB Rating -> Genre -> Size -> Runtime -> plot synopsis.
+#
+# Genre is bounded by a lookahead on every label that can actually follow it
+# (not just a literal "Rating:", which normally appears BEFORE Genre and so
+# never terminates the match — that was the fusion bug: Genre's capture used
+# to run to end-of-string, swallowing Size/Runtime/plot into the last genre).
+_GENRE_PATTERN = re.compile(r"Genre:\s*(.+?)\s*(?=Size:|Runtime:|Rating:|$)", re.IGNORECASE)
+# Size/Runtime are bounded by their own value shape (digits + unit) rather
+# than by hoping a subsequent label exists — robust to feed format variance.
+_SIZE_PATTERN = re.compile(r"Size:\s*([\d.]+\s*[GM]B)", re.IGNORECASE)
+_RUNTIME_PATTERN = re.compile(r"Runtime:\s*((?:\d+\s*hr\s*)?\d+\s*min)", re.IGNORECASE)
+
 
 class _DescriptionParser(HTMLParser):
     """Simple HTML parser to extract info from RSS <description> field."""
@@ -35,6 +49,9 @@ class _DescriptionParser(HTMLParser):
         self.poster_url: str | None = None
         self.genres: list[str] = []
         self.imdb_rating: float | None = None
+        self.size: str | None = None
+        self.runtime: str | None = None
+        self.plot: str | None = None
         self._current_data: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
@@ -48,11 +65,11 @@ class _DescriptionParser(HTMLParser):
         self._current_data.append(data)
 
     def extract_metadata(self) -> None:
-        """Parse collected text data for genres and ratings."""
+        """Parse collected text data for genres, size, runtime, plot, and ratings."""
         full_text = " ".join(self._current_data)
 
         # Look for genre info (YTS often has "Genre: Action / Thriller")
-        genre_match = re.search(r"Genre:\s*(.+?)(?:\n|$|Rating:)", full_text, re.IGNORECASE)
+        genre_match = _GENRE_PATTERN.search(full_text)
         if genre_match:
             raw_genres = genre_match.group(1)
             self.genres = [g.strip() for g in re.split(r"[/,]", raw_genres) if g.strip()]
@@ -66,6 +83,22 @@ class _DescriptionParser(HTMLParser):
                     self.imdb_rating = rating
             except ValueError:
                 pass
+
+        size_match = _SIZE_PATTERN.search(full_text)
+        if size_match:
+            self.size = size_match.group(1).strip()
+
+        runtime_match = _RUNTIME_PATTERN.search(full_text)
+        if runtime_match:
+            self.runtime = runtime_match.group(1).strip()
+
+        # Plot is whatever text follows the last recognized label actually
+        # found — in the real layout that's Runtime, so check it first and
+        # fall back toward earlier labels only if later ones are absent.
+        for match in (runtime_match, size_match, genre_match, rating_match):
+            if match:
+                self.plot = full_text[match.end():].strip() or None
+                break
 
 
 def _parse_description(description: str) -> dict:
@@ -81,6 +114,9 @@ def _parse_description(description: str) -> dict:
         "poster_url": parser.poster_url,
         "genres": parser.genres,
         "imdb_rating": parser.imdb_rating,
+        "size": parser.size,
+        "runtime": parser.runtime,
+        "plot": parser.plot,
     }
 
 
@@ -110,11 +146,6 @@ def _parse_entry(entry: dict) -> dict | None:
             year = datetime.utcnow().year
             logger.warning("No year found in title: %s, defaulting to current year", raw_title)
 
-    # Extract qualities like [720p], [1080p], [2160p]
-    qualities = _QUALITY_PATTERN.findall(raw_title)
-    if not qualities:
-        qualities = ["Unknown"]
-
     # Get torrent URL from link or enclosure
     torrent_url = ""
     if entry.get("enclosures"):
@@ -128,6 +159,14 @@ def _parse_entry(entry: dict) -> dict | None:
     # Parse description HTML
     description = entry.get("summary", "") or entry.get("description", "")
     desc_data = _parse_description(description)
+
+    # Extract qualities like [720p], [1080p], [2160p] and pair each with the
+    # single description-derived size (Size is a property of the release's
+    # format, not a separate genre — see fetcher description parsing above)
+    qualities_raw = _QUALITY_PATTERN.findall(raw_title)
+    if not qualities_raw:
+        qualities_raw = ["Unknown"]
+    qualities = [{"quality": q, "size": desc_data["size"]} for q in qualities_raw]
 
     # Parse publication date
     published = entry.get("published_parsed")
@@ -149,6 +188,8 @@ def _parse_entry(entry: dict) -> dict | None:
         "qualities": qualities,
         "poster_url": desc_data["poster_url"],
         "imdb_rating": desc_data["imdb_rating"],
+        "runtime": desc_data["runtime"],
+        "plot": desc_data["plot"],
         "feed_entry_date": feed_entry_date,
     }
 

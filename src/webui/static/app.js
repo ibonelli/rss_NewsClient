@@ -183,10 +183,11 @@ function MovieCard({ movie, onMarkRead, onMarkUnread, onEnrich }) {
                     <div className="movie-qualities">
                         ${movie.qualities.map((q, i) => html`
                             <a key=${i} href=${movie.torrent_url} target="_blank" rel="noreferrer" className="quality-link">
-                                <${Badge} className="quality-badge">${q}</${Badge}>
+                                <${Badge} className="quality-badge">${q.quality}${q.size ? ` · ${q.size}` : ""}</${Badge}>
                             </a>
                         `)}
                     </div>
+                    ${movie.runtime && html`<div className="movie-runtime">${movie.runtime}</div>`}
                     <div className="movie-ratings">
                         <${RatingBadge} label="IMDb" value=${movie.imdb_rating} max=${10} />
                         <${RatingBadge} label="RT" value=${movie.rt_expert_rating} max=${100}
@@ -194,6 +195,7 @@ function MovieCard({ movie, onMarkRead, onMarkUnread, onEnrich }) {
                         <${RatingBadge} label="Audience" value=${movie.rt_audience_rating} max=${100}
                             href=${movie.rt_audience_rating != null ? `https://www.rottentomatoes.com/search/?search=${encodeURIComponent(movie.title)}` : null} />
                     </div>
+                    ${movie.plot && html`<p className="movie-plot">${movie.plot}</p>`}
                     ${movie.enrichment_error && html`<p className="enrichment-error">${movie.enrichment_error}</p>`}
                     <div className="movie-actions">
                         ${onMarkRead && html`

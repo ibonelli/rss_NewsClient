@@ -53,6 +53,8 @@ def _movie_to_dict(movie: Movie) -> dict:
         "rt_expert_rating": movie.rt_expert_rating,
         "rt_audience_rating": movie.rt_audience_rating,
         "poster_url": movie.poster_url,
+        "runtime": movie.runtime,
+        "plot": movie.plot,
         "feed_entry_date": movie.feed_entry_date.isoformat() if movie.feed_entry_date else None,
         "enrichment_date": movie.enrichment_date.isoformat() if movie.enrichment_date else None,
         "enrichment_error": movie.enrichment_error,

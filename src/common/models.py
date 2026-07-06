@@ -35,6 +35,8 @@ class Movie(Base):
     rt_expert_rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
     rt_audience_rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
     poster_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    runtime: Mapped[str | None] = mapped_column(String(50), nullable=True)  # raw string e.g. "2hr 20 min"
+    plot: Mapped[str | None] = mapped_column(Text, nullable=True)  # full synopsis, not truncated
     feed_entry_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     enrichment_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     enrichment_error: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -49,15 +49,22 @@ def _validate_movie(movie: dict) -> bool:
     return True
 
 
-def _merge_qualities(existing_json: str, new_qualities: list[str]) -> str:
-    """Merge new qualities into existing qualities JSON, returning updated JSON."""
+def _merge_qualities(existing_json: str, new_qualities: list[dict]) -> str:
+    """Merge new {quality, size} variants into existing qualities JSON (union by
+    quality name). Mirrors _merge_series_qualities: on a key match, the existing
+    entry (including its size) is left as-is, no update."""
     try:
         existing = json.loads(existing_json)
     except (json.JSONDecodeError, TypeError):
         existing = []
 
-    merged = list(set(existing) | set(new_qualities))
-    return json.dumps(sorted(merged))
+    known = {v["quality"] for v in existing if isinstance(v, dict) and "quality" in v}
+    for variant in new_qualities:
+        if variant.get("quality") not in known:
+            existing.append(variant)
+            known.add(variant.get("quality"))
+
+    return json.dumps(existing)
 
 
 def deduplicate_and_store(session: Session, movies: list[dict]) -> dict:
@@ -122,6 +129,8 @@ def deduplicate_and_store(session: Session, movies: list[dict]) -> dict:
                 qualities=json.dumps(movie["qualities"]),
                 imdb_rating=movie.get("imdb_rating"),
                 poster_url=movie.get("poster_url"),
+                runtime=movie.get("runtime"),
+                plot=movie.get("plot"),
                 feed_entry_date=movie["feed_entry_date"],
                 is_read=False,
                 created_at=datetime.utcnow(),

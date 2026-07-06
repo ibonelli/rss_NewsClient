@@ -212,6 +212,20 @@ body {
     font-size: 0.9rem;
 }
 
+.movie-runtime {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+.movie-plot {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    line-height: 1.4;
+    margin-top: 0.25rem;
+    max-height: 5.6em;
+    overflow-y: auto;
+}
+
 /* Badges */
 .badge {
     display: inline-block;
