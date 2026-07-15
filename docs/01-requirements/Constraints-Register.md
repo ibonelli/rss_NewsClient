@@ -13,6 +13,7 @@ List constraints that are non-negotiable. This is a primary AI context document.
 - **C-007 (Configuration):** Filtering rules and feed definitions MUST be configurable via file, not hardcoded.
 - **C-008 (AI integration):** AI-filtered news feeds MUST support JSON export of unprocessed items (for external AI processing) and JSON import of results. The application MUST NOT invoke any AI tool or external AI service directly.
 - **C-009 (Series enrichment):** MUST NOT use paid APIs for series metadata enrichment. Series records are stored as ingested from the RSS feed only.
+- **C-010 (Series categorization):** Series `follow_filters` pattern matching MUST run only once, at the moment a `series` row is first created by the CLI Ingester. It MUST NOT re-evaluate existing series on later ingester runs, and MUST NOT override a category the user has set manually (Following or Ignored).
 
 ## Forbidden Solutions (Explicit)
 - **F-001:** Do NOT use paid API tiers for movie rating enrichment (OMDb paid, TMDb paid, etc.).
@@ -20,6 +21,7 @@ List constraints that are non-negotiable. This is a primary AI context document.
 - **F-003:** Do NOT hardcode filtering thresholds or feed definitions in source code.
 - **F-004:** Do NOT invoke any AI service (including Claude CLI) directly from within the application.
 - **F-005:** Do NOT use paid APIs for series metadata enrichment.
+- **F-006:** Do NOT re-run `series_feed.follow_filters` matching against already-ingested series, and do NOT let it override a series the user has manually set to Following or Ignored.
 
 ## Notes / Rationale
 - Personal project with zero budget for external services.

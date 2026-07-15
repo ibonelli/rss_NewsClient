@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added — Series Three-Category Model: Inbox/Following/Ignored (Planned)
+- Documentation-only so far (Requirements FR-081–FR-085, AC-027–AC-031; Data-Contracts; Architecture-Overview; Constraints-Register C-010/F-006) — code not yet implemented, see below for design.
+- `series` table gains a new `is_following` boolean column (default `false`) alongside the existing `is_ignored`; category is derived: Inbox = both false (default), Following = `is_following=true`, Ignored = `is_ignored=true` (always implies `is_following=false`)
+- Migration: existing rows with `is_ignored=false` move to Inbox; existing `is_ignored=true` rows are unaffected
+- New `config.yaml` key `series_feed.follow_filters` — list of `{name, pattern}` entries (same shape as `news_feeds[].filters`); CLI Ingester tests a brand-new series title against these patterns once, at row-creation time only, and creates it directly in Following on a match — never re-evaluated afterward, never overrides a manual choice
+- New endpoints `POST /api/series/{id}/follow` and `/unfollow`; `GET /api/series` and `POST /api/series/read-all` move from a boolean `ignored` param to a three-way `category=inbox|following|ignored` param (default `following`, preserving today's default view)
+- Series tab view toggle becomes three-way (Inbox/Following/Ignored); default view stays Following; Inbox rows get Follow/Ignore buttons, Following rows get Unfollow/Ignore, Ignored rows get Unignore (→ Inbox)
+
 ### Changed — Series "Not-Ignored" Label Renamed to "Following"
 - Series tab toggle button label changed from "Not-Ignored" to "Following" (`app.js`) — display text only; the underlying `isIgnored` state, `ignored=` query param, and `is_ignored` DB column are unchanged
 - Requirements.md and Data-Contracts.md updated to use "Following" going forward; prior Change-Log/Implementation-Notes entries left as-is since they describe the naming at the time of that work

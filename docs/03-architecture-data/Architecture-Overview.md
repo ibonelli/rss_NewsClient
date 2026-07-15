@@ -66,9 +66,11 @@ src/
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/api/series` | Series grouped by title → season → episode; `read` bool (default `false`) × `ignored` bool (default `false`) |
-| POST | `/api/series/{series_id}/ignore` | Set `is_ignored = true` on `series` row |
-| POST | `/api/series/{series_id}/unignore` | Set `is_ignored = false` on `series` row |
+| GET | `/api/series` | Series grouped by title → season → episode; `read` bool (default `false`) × `category` enum `inbox`\|`following`\|`ignored` (default `following`) |
+| POST | `/api/series/{series_id}/follow` | Set `is_following = true` on `series` row |
+| POST | `/api/series/{series_id}/unfollow` | Set `is_following = false` on `series` row (→ Inbox) |
+| POST | `/api/series/{series_id}/ignore` | Set `is_ignored = true`, `is_following = false` on `series` row |
+| POST | `/api/series/{series_id}/unignore` | Set `is_ignored = false` on `series` row (→ Inbox) |
 | POST | `/api/series/episodes/{episode_id}/read` | Mark episode as read |
 | POST | `/api/series/episodes/{episode_id}/unread` | Mark episode as unread |
 | POST | `/api/series/read-all` | Mark all unread episodes as read |
@@ -101,7 +103,7 @@ All three processes connect via SQLAlchemy using `database.url` from `config.yam
 |---|---|---|
 | CLI Ingester | — | `movies`, `series`, `series_episodes`, `news_items`, `design_items`, `feed_health` |
 | CLI Filter Processor | `news_items`, `filters` | `filters` (sync), `news_items.matched_filter_id` |
-| FastAPI Web UI | `movies`, `series`, `series_episodes`, `news_items`, `design_items`, `feed_health`, `filters` | `movies.is_read`, `movies` (enrichment), `series.is_ignored`, `series_episodes.is_read`, `news_items.is_read`, `design_items.is_read` |
+| FastAPI Web UI | `movies`, `series`, `series_episodes`, `news_items`, `design_items`, `feed_health`, `filters` | `movies.is_read`, `movies` (enrichment), `series.is_ignored`, `series.is_following`, `series_episodes.is_read`, `news_items.is_read`, `design_items.is_read` |
 
 **Concurrency:** SQLite has a single-writer limitation — acceptable since Ingester and Filter Processor run sequentially in the same cron chain, and web app writes are infrequent (read-tracking only). MySQL handles concurrent reads and writes without issue.
 

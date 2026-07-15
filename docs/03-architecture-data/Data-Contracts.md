@@ -7,8 +7,8 @@
 - **Owner:** CLI Ingester (creates/updates); Web UI (reads, marks as read, triggers enrichment)
 
 ### Series
-- **Definition:** One row per unique series title. Holds title-level metadata: `imdb_id` and the `is_ignored` flag.
-- **Owner:** CLI Ingester (creates on first episode seen for title); Web UI (reads; sets `is_ignored`)
+- **Definition:** One row per unique series title. Holds title-level metadata: `imdb_id` and the category flags `is_following` / `is_ignored`, which together derive one of three mutually-exclusive categories: Inbox (both false, default), Following (`is_following=true`), Ignored (`is_ignored=true`, `is_following` always false in that case).
+- **Owner:** CLI Ingester (creates on first episode seen for title — sets `is_following=true` if the title matches a configured `series_feed.follow_filters` pattern, else Inbox default); Web UI (reads; sets/clears `is_following` and `is_ignored` via Follow/Unfollow/Ignore/Unignore actions)
 
 ### SeriesEpisode
 - **Definition:** One row per unique `(series_id, season, episode)` combination. Holds episode-level data: quality variants, feed date, read status.
@@ -80,14 +80,18 @@ class Series(Base):
     id: int              # PK, auto-increment
     title: str           # NOT NULL, UNIQUE — normalized series name
     imdb_id: str | None  # nullable — e.g. "tt0903747"; not in EZTV feed, reserved for future use
-    is_ignored: bool     # default False — series appears in Following view; true = Ignored view only
+    is_following: bool   # default False — set true manually (Follow) or at creation by a follow_filters match
+    is_ignored: bool     # default False — true = Ignored view only; MUST imply is_following=False when true
     created_at: datetime
     updated_at: datetime
 ```
 
+Category is derived, not stored directly: Inbox = `is_following=False and is_ignored=False` (default); Following = `is_following=True and is_ignored=False`; Ignored = `is_ignored=True`. The app enforces mutual exclusivity — setting `is_ignored=True` always clears `is_following`; `is_following` can only be set from Inbox.
+
 **Indexes:**
 - `ix_series_title` UNIQUE on `title` — primary dedup key
 - `ix_series_is_ignored` on `is_ignored` — view filtering
+- `ix_series_is_following` on `is_following` — view filtering
 
 ---
 
@@ -280,6 +284,9 @@ feed:
 
 series_feed:
   url: "https://eztv.re/ezrss.xml"
+  follow_filters:                          # optional — same {name, pattern} shape as news_feeds[].filters
+    - name: "prestige-drama"
+      pattern: "(Breaking Bad|Better Call Saul)"
 
 alerting:
   smtp_host: "localhost"
@@ -479,20 +486,21 @@ On failure: same shape with all rating fields `null`, `imdb_id` `null`, and `enr
 
 Query params:
 - `read` (bool, default `false`) — `false` = episodes with `is_read=false` (Unread); `true` = episodes with `is_read=true` (Read)
-- `ignored` (bool, default `false`) — `false` = non-ignored series (Following); `true` = ignored series
+- `category` (string enum, default `following`) — one of `inbox`, `following`, `ignored`. Replaces the old boolean `ignored` param now that there are three categories: `inbox` → `is_following=false, is_ignored=false`; `following` → `is_following=true, is_ignored=false`; `ignored` → `is_ignored=true`.
 
 A series title appears in the response only if it has at least one episode matching the `read` filter.
 
 ```json
 {
   "read": false,
-  "ignored": false,
+  "category": "following",
   "series": [
     {
       "id": 1,
       "title": "Breaking Bad",
       "imdb_id": null,
       "imdb_url": "https://www.imdb.com/search/title/?title=Breaking+Bad&title_type=tv_series",
+      "is_following": true,
       "is_ignored": false,
       "seasons": [
         {
@@ -516,14 +524,18 @@ A series title appears in the response only if it has at least one episode match
 }
 ```
 
-`imdb_url` uses `https://www.imdb.com/title/{imdb_id}/` when `imdb_id` is known; falls back to an IMDb title-search URL otherwise (ADR-010). `is_ignored` lives only at the series level — episodes carry no ignore flag.
+`imdb_url` uses `https://www.imdb.com/title/{imdb_id}/` when `imdb_id` is known; falls back to an IMDb title-search URL otherwise (ADR-010). `is_following`/`is_ignored` live only at the series level — episodes carry no category flag of their own.
 
-### POST `/api/series/{series_id}/ignore` and `/api/series/{series_id}/unignore`
+### POST `/api/series/{series_id}/follow`, `/unfollow`, `/ignore`, `/unignore`
 
-Sets `is_ignored` on the `series` row identified by `series_id` (PK). Ignored series appear only when `ignored=true` is passed to `GET /api/series`.
+All four set/clear `is_following` / `is_ignored` on the `series` row identified by `series_id` (PK), enforcing the mutual-exclusivity rule (a series is never both Following and Ignored):
+- `follow` — `is_following=true` (only meaningful from Inbox; `is_ignored` is already false there)
+- `unfollow` — `is_following=false` (returns the series to Inbox)
+- `ignore` — `is_ignored=true` AND `is_following=false`
+- `unignore` — `is_ignored=false` (returns the series to Inbox, not Following)
 
 ```json
-{ "id": 1, "title": "Breaking Bad", "is_ignored": true }
+{ "id": 1, "title": "Breaking Bad", "is_following": false, "is_ignored": true }
 ```
 
 ### POST `/api/series/episodes/{episode_id}/read` and `/api/series/episodes/{episode_id}/unread`
@@ -537,7 +549,7 @@ Sets `is_read` on a `series_episodes` row.
 ### POST `/api/series/read-all`
 
 Query params:
-- `ignored` (bool, default `false`) — scopes which unread episodes are marked read: `false` marks only episodes of non-ignored series; `true` marks only episodes of ignored series
+- `category` (string enum, default `following`) — one of `inbox`, `following`, `ignored`; scopes which unread episodes are marked read to the given category only (see `GET /api/series` above)
 
 Only `is_read=false` episodes within the scoped series are affected.
 
