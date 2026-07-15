@@ -80,7 +80,7 @@ class Series(Base):
     id: int              # PK, auto-increment
     title: str           # NOT NULL, UNIQUE — normalized series name
     imdb_id: str | None  # nullable — e.g. "tt0903747"; not in EZTV feed, reserved for future use
-    is_ignored: bool     # default False — series appears in Not-Ignored view; true = Ignored view only
+    is_ignored: bool     # default False — series appears in Following view; true = Ignored view only
     created_at: datetime
     updated_at: datetime
 ```
@@ -479,7 +479,7 @@ On failure: same shape with all rating fields `null`, `imdb_id` `null`, and `enr
 
 Query params:
 - `read` (bool, default `false`) — `false` = episodes with `is_read=false` (Unread); `true` = episodes with `is_read=true` (Read)
-- `ignored` (bool, default `false`) — `false` = non-ignored series (Not-Ignored); `true` = ignored series
+- `ignored` (bool, default `false`) — `false` = non-ignored series (Following); `true` = ignored series
 
 A series title appears in the response only if it has at least one episode matching the `read` filter.
 

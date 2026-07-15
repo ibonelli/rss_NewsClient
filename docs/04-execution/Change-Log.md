@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed — Series "Not-Ignored" Label Renamed to "Following"
+- Series tab toggle button label changed from "Not-Ignored" to "Following" (`app.js`) — display text only; the underlying `isIgnored` state, `ignored=` query param, and `is_ignored` DB column are unchanged
+- Requirements.md and Data-Contracts.md updated to use "Following" going forward; prior Change-Log/Implementation-Notes entries left as-is since they describe the naming at the time of that work
+
 ### Fixed — Movie Genre-Fusion Parsing Bug + Size/Runtime/Plot (ADR-015)
 - Fixed `_DescriptionParser`/`_parse_entry` (`src/cli/fetcher.py`): the genre regex previously terminated only on a literal `Rating:` substring or end-of-string, which never matched again since `Rating:` appears *before* `Genre:` in the real YTS layout — this fused the last genre together with Size/Runtime/plot text (reported live example: "Crime 101" — last genre was `"Thriller Size: 1.26 GB Runtime: 2hr 20 min <full plot>"`). Genre is now bounded by a lookahead over every label that can actually follow it.
 - Added Size, Runtime, and Plot extraction from the `<description>` HTML (previously discarded entirely): Size and Runtime are bounded by their own value shape; Plot is whatever text follows the last recognized label.

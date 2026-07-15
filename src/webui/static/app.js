@@ -598,7 +598,7 @@ function SeriesTab() {
                 </div>
                 <div className="view-toggle">
                     <button className=${`btn btn-sm ${!isIgnored ? "btn-active" : "btn-secondary"}`}
-                        onClick=${() => !isIgnored || handleToggleIgnored()}>Not-Ignored</button>
+                        onClick=${() => !isIgnored || handleToggleIgnored()}>Following</button>
                     <button className=${`btn btn-sm ${isIgnored ? "btn-active" : "btn-secondary"}`}
                         onClick=${() => isIgnored || handleToggleIgnored()}>Ignored</button>
                 </div>
