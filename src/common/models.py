@@ -50,11 +50,15 @@ class Series(Base):
     __table_args__ = (
         Index("ix_series_title", "title", unique=True),
         Index("ix_series_is_ignored", "is_ignored"),
+        Index("ix_series_is_following", "is_following"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     title: Mapped[str] = mapped_column(String(500), nullable=False, unique=True)
     imdb_id: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Category is derived, not stored directly: Inbox = both False (default),
+    # Following = is_following True, Ignored = is_ignored True (always implies is_following False).
+    is_following: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_ignored: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

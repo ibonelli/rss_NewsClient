@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime
 
 from sqlalchemy.orm import Session
@@ -162,7 +163,23 @@ def _merge_series_qualities(existing_json: str, new_variant: dict) -> str:
     return json.dumps(existing)
 
 
-def deduplicate_and_store_series(session: Session, entries: list[dict]) -> dict:
+def _matches_follow_filters(title: str, follow_filters: list[dict]) -> bool:
+    """Check a series title against configured series_feed.follow_filters patterns.
+
+    Only ever called at series row creation (see deduplicate_and_store_series) —
+    never re-evaluated for existing series, so editing config.yaml has no
+    retroactive effect and can never override a manually-set category (C-010/F-006).
+    """
+    return any(
+        re.search(f["pattern"], title, re.IGNORECASE)
+        for f in follow_filters
+        if f.get("pattern")
+    )
+
+
+def deduplicate_and_store_series(
+    session: Session, entries: list[dict], follow_filters: list[dict] | None = None
+) -> dict:
     """Deduplicate and store series entries using the two-table design.
 
     Level 1 (V-025a): upsert series title row in `series`.
@@ -173,11 +190,15 @@ def deduplicate_and_store_series(session: Session, entries: list[dict]) -> dict:
     Args:
         session: SQLAlchemy session.
         entries: List of parsed series dicts from the fetcher.
+        follow_filters: Optional `series_feed.follow_filters` config entries
+            ({name, pattern}); a brand-new series matching one is created
+            directly in Following instead of the Inbox default.
 
     Returns:
         Stats dict: {"inserted": N, "merged": N, "skipped": N}
     """
     stats = {"inserted": 0, "merged": 0, "skipped": 0}
+    follow_filters = follow_filters or []
 
     for entry in entries:
         title = (entry.get("title") or "").strip()
@@ -212,6 +233,7 @@ def deduplicate_and_store_series(session: Session, entries: list[dict]) -> dict:
                 series_row = Series(
                     title=title,
                     imdb_id=entry.get("imdb_id"),
+                    is_following=_matches_follow_filters(title, follow_filters),
                     is_ignored=False,
                     created_at=datetime.utcnow(),
                     updated_at=datetime.utcnow(),

@@ -207,8 +207,9 @@ def main() -> None:
             series_entries = []
 
         if series_entries:
+            follow_filters = config.get("series_feed", {}).get("follow_filters", [])
             with SessionFactory() as session:
-                stats = deduplicate_and_store_series(session, series_entries)
+                stats = deduplicate_and_store_series(session, series_entries, follow_filters=follow_filters)
                 logger.info(
                     "Series: %d inserted, %d merged, %d skipped",
                     stats["inserted"], stats["merged"], stats["skipped"],

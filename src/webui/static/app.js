@@ -500,33 +500,33 @@ function NewsTab({ initialFeedName }) {
 
 function SeriesTab() {
     const [isRead, setIsRead] = useState(false);
-    const [isIgnored, setIsIgnored] = useState(false);
+    const [category, setCategory] = useState("following");
     const [seriesList, setSeriesList] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [markingAll, setMarkingAll] = useState(false);
     const [ignoringAll, setIgnoringAll] = useState(false);
 
-    const loadSeries = (read, ignored) => {
+    const loadSeries = (read, cat) => {
         setLoading(true);
         setError(null);
-        fetch(`/api/series?read=${read}&ignored=${ignored}`)
+        fetch(`/api/series?read=${read}&category=${cat}`)
             .then(r => r.json())
             .then(data => { setSeriesList(data.series || []); setLoading(false); })
             .catch(() => { setError("Failed to load series"); setLoading(false); });
     };
 
-    useEffect(() => { loadSeries(false, false); }, []);
+    useEffect(() => { loadSeries(false, "following"); }, []);
 
     const handleToggleRead = () => {
         const next = !isRead;
         setIsRead(next);
-        loadSeries(next, isIgnored);
+        loadSeries(next, category);
     };
 
-    const handleToggleIgnored = () => {
-        const next = !isIgnored;
-        setIsIgnored(next);
+    const handleSelectCategory = (next) => {
+        if (next === category) return;
+        setCategory(next);
         loadSeries(isRead, next);
     };
 
@@ -555,7 +555,7 @@ function SeriesTab() {
     const handleMarkAllRead = async () => {
         setMarkingAll(true);
         try {
-            await fetch(`/api/series/read-all?ignored=${isIgnored}`, { method: "POST" });
+            await fetch(`/api/series/read-all?category=${category}`, { method: "POST" });
             setSeriesList([]);
         } catch (e) {
             console.error("Failed to mark all as read:", e);
@@ -566,12 +566,22 @@ function SeriesTab() {
     const handleIgnoreAll = async () => {
         setIgnoringAll(true);
         try {
-            await fetch(`/api/series/ignore-all`, { method: "POST" });
+            await fetch(`/api/series/ignore-all?category=${category}`, { method: "POST" });
             setSeriesList([]);
         } catch (e) {
             console.error("Failed to ignore all series:", e);
         }
         setIgnoringAll(false);
+    };
+
+    const handleFollow = async (seriesId) => {
+        await fetch(`/api/series/${seriesId}/follow`, { method: "POST" });
+        setSeriesList(prev => prev.filter(s => s.id !== seriesId));
+    };
+
+    const handleUnfollow = async (seriesId) => {
+        await fetch(`/api/series/${seriesId}/unfollow`, { method: "POST" });
+        setSeriesList(prev => prev.filter(s => s.id !== seriesId));
     };
 
     const handleIgnore = async (seriesId) => {
@@ -597,10 +607,12 @@ function SeriesTab() {
                         onClick=${() => isRead || handleToggleRead()}>Read</button>
                 </div>
                 <div className="view-toggle">
-                    <button className=${`btn btn-sm ${!isIgnored ? "btn-active" : "btn-secondary"}`}
-                        onClick=${() => !isIgnored || handleToggleIgnored()}>Following</button>
-                    <button className=${`btn btn-sm ${isIgnored ? "btn-active" : "btn-secondary"}`}
-                        onClick=${() => isIgnored || handleToggleIgnored()}>Ignored</button>
+                    <button className=${`btn btn-sm ${category === "inbox" ? "btn-active" : "btn-secondary"}`}
+                        onClick=${() => handleSelectCategory("inbox")}>Inbox</button>
+                    <button className=${`btn btn-sm ${category === "following" ? "btn-active" : "btn-secondary"}`}
+                        onClick=${() => handleSelectCategory("following")}>Following</button>
+                    <button className=${`btn btn-sm ${category === "ignored" ? "btn-active" : "btn-secondary"}`}
+                        onClick=${() => handleSelectCategory("ignored")}>Ignored</button>
                 </div>
                 <div className="tab-count">${seriesList.length} series</div>
                 ${!isRead && html`
@@ -608,7 +620,7 @@ function SeriesTab() {
                         ${markingAll ? "..." : "Mark All Read"}
                     </button>
                 `}
-                ${!isIgnored && html`
+                ${category !== "ignored" && html`
                     <button className="btn btn-secondary btn-sm" onClick=${handleIgnoreAll} disabled=${ignoringAll}>
                         ${ignoringAll ? "..." : "Ignore All"}
                     </button>
@@ -616,18 +628,27 @@ function SeriesTab() {
             </div>
             ${seriesList.length === 0
                 ? html`<div className="empty-state">
-                    ${isIgnored
+                    ${category === "ignored"
                         ? "No ignored series."
+                        : category === "inbox"
+                        ? "No series in Inbox."
                         : html`<p>No series to display. Run the ingester first:</p><code>python src/cli/main.py</code>`}
                 </div>`
                 : seriesList.map(series => html`
                     <div key=${series.id} className="series-block">
                         <h2 className="series-title">
                             <a href=${series.imdb_url} target="_blank" rel="noreferrer">${series.title}</a>
-                            ${isIgnored
-                                ? html`<button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${() => handleUnignore(series.id)}>Unignore</button>`
-                                : html`<button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${() => handleIgnore(series.id)}>Ignore</button>`
-                            }
+                            ${category === "inbox" && html`
+                                <button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${() => handleFollow(series.id)}>Follow</button>
+                                <button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${() => handleIgnore(series.id)}>Ignore</button>
+                            `}
+                            ${category === "following" && html`
+                                <button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${() => handleUnfollow(series.id)}>Unfollow</button>
+                                <button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${() => handleIgnore(series.id)}>Ignore</button>
+                            `}
+                            ${category === "ignored" && html`
+                                <button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${() => handleUnignore(series.id)}>Unignore</button>
+                            `}
                         </h2>
                         ${series.seasons.map(season => html`
                             <div key=${season.season} className="season-block">

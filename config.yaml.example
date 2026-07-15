@@ -7,6 +7,13 @@ feed:
 
 series_feed:
   url: "https://eztv.re/ezrss.xml"
+  # Optional — new series whose title matches any pattern here are created
+  # directly in "Following" instead of "Inbox". Checked once, only when a
+  # series is first ingested; never re-applied afterward or to series the
+  # user has since set manually.
+  follow_filters:
+    - name: "example"
+      pattern: "(Breaking Bad|Better Call Saul)"
 
 alerting:
   smtp_host: "localhost"

@@ -2,13 +2,13 @@
 
 ## Unreleased
 
-### Added — Series Three-Category Model: Inbox/Following/Ignored (Planned)
-- Documentation-only so far (Requirements FR-081–FR-085, AC-027–AC-031; Data-Contracts; Architecture-Overview; Constraints-Register C-010/F-006) — code not yet implemented, see below for design.
-- `series` table gains a new `is_following` boolean column (default `false`) alongside the existing `is_ignored`; category is derived: Inbox = both false (default), Following = `is_following=true`, Ignored = `is_ignored=true` (always implies `is_following=false`)
-- Migration: existing rows with `is_ignored=false` move to Inbox; existing `is_ignored=true` rows are unaffected
-- New `config.yaml` key `series_feed.follow_filters` — list of `{name, pattern}` entries (same shape as `news_feeds[].filters`); CLI Ingester tests a brand-new series title against these patterns once, at row-creation time only, and creates it directly in Following on a match — never re-evaluated afterward, never overrides a manual choice
-- New endpoints `POST /api/series/{id}/follow` and `/unfollow`; `GET /api/series` and `POST /api/series/read-all` move from a boolean `ignored` param to a three-way `category=inbox|following|ignored` param (default `following`, preserving today's default view)
-- Series tab view toggle becomes three-way (Inbox/Following/Ignored); default view stays Following; Inbox rows get Follow/Ignore buttons, Following rows get Unfollow/Ignore, Ignored rows get Unignore (→ Inbox)
+### Added — Series Three-Category Model: Inbox/Following/Ignored
+- `series` table gains a new `is_following` boolean column (default `false`) alongside the existing `is_ignored` (`models.py`); category is derived: Inbox = both false (default), Following = `is_following=true`, Ignored = `is_ignored=true` (always implies `is_following=false`, enforced in the API layer, not the DB)
+- `tools/migrate_005_series_following.sh` — idempotent ALTER TABLE (SQLite + MySQL); existing rows default to `is_following=false`, so all pre-migration non-ignored series move to Inbox, and existing Ignored rows are unaffected
+- New `config.yaml` key `series_feed.follow_filters` — list of `{name, pattern}` entries (same shape as `news_feeds[].filters`); `dedup.py:_matches_follow_filters` tests a brand-new series title against these patterns once, at row-creation time only (`deduplicate_and_store_series`), and creates it directly in Following on a match — never re-evaluated afterward, never overrides a manual choice
+- New endpoints `POST /api/series/{id}/follow` and `/unfollow` (`routes.py`); `GET /api/series`, `POST /api/series/read-all`, and `POST /api/series/ignore-all` move from a boolean `ignored` param to a three-way `category=inbox|following|ignored` param (default `following`, preserving the previous default view); `ignore-all` now scopes to the category passed (previously ignored ALL non-ignored series regardless of view)
+- Series tab view toggle (`app.js`) becomes three-way (Inbox/Following/Ignored); default view stays Following; Inbox rows get Follow/Ignore buttons, Following rows get Unfollow/Ignore, Ignored rows get Unignore (→ Inbox)
+- Verified end-to-end against an isolated SQLite DB: ingest with a matching follow filter, manual follow/unfollow/ignore/unignore transitions, and category-scoped ignore-all all produce the expected category membership; frontend rendering confirmed via headless-browser screenshot of the Following view
 
 ### Changed — Series "Not-Ignored" Label Renamed to "Following"
 - Series tab toggle button label changed from "Not-Ignored" to "Following" (`app.js`) — display text only; the underlying `isIgnored` state, `ignored=` query param, and `is_ignored` DB column are unchanged

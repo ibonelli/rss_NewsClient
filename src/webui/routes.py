@@ -10,6 +10,7 @@ from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
+from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from collections import defaultdict
@@ -180,6 +181,32 @@ async def enrich(
 # Series
 # ---------------------------------------------------------------------------
 
+_SERIES_CATEGORIES = {"inbox", "following", "ignored"}
+
+
+def _series_category_filter(category: str):
+    """Build the SQLAlchemy filter expression for a series category.
+
+    Category is derived from two independent booleans rather than stored
+    directly (see Series model): inbox = both false (default, untriaged),
+    following = is_following true, ignored = is_ignored true.
+    """
+    if category not in _SERIES_CATEGORIES:
+        raise HTTPException(status_code=422, detail=f"Invalid category: {category!r}")
+    if category == "inbox":
+        return and_(Series.is_following == False, Series.is_ignored == False)
+    if category == "following":
+        return and_(Series.is_following == True, Series.is_ignored == False)
+    return Series.is_ignored == True
+
+
+def _get_series_or_404(session: Session, series_id: int) -> Series:
+    row = session.query(Series).filter(Series.id == series_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Series not found")
+    return row
+
+
 def _build_series_response(results: list) -> list[dict]:
     """Build the series API response from (Series, SeriesEpisode) join tuples."""
     by_series: dict[int, dict] = {}
@@ -195,6 +222,7 @@ def _build_series_response(results: list) -> list[dict]:
                 "title": series.title,
                 "imdb_id": series.imdb_id,
                 "imdb_url": imdb_url,
+                "is_following": series.is_following,
                 "is_ignored": series.is_ignored,
                 "seasons": defaultdict(list),
             }
@@ -227,39 +255,56 @@ def _build_series_response(results: list) -> list[dict]:
 @router.get("/api/series")
 async def get_series(
     read: bool = Query(default=False),
-    ignored: bool = Query(default=False),
+    category: str = Query(default="following"),
     session: Session = Depends(_get_session),
 ):
+    cat_filter = _series_category_filter(category)
     rows = (
         session.query(Series, SeriesEpisode)
         .join(SeriesEpisode, SeriesEpisode.series_id == Series.id)
-        .filter(Series.is_ignored == ignored, SeriesEpisode.is_read == read)
+        .filter(cat_filter, SeriesEpisode.is_read == read)
         .order_by(Series.title, SeriesEpisode.season, SeriesEpisode.episode)
         .all()
     )
-    return {"read": read, "ignored": ignored, "series": _build_series_response(rows)}
+    return {"read": read, "category": category, "series": _build_series_response(rows)}
+
+
+@router.post("/api/series/{series_id}/follow")
+async def follow_series(series_id: int, session: Session = Depends(_get_session)):
+    row = _get_series_or_404(session, series_id)
+    row.is_following = True
+    row.is_ignored = False
+    row.updated_at = datetime.utcnow()
+    session.commit()
+    return {"id": row.id, "title": row.title, "is_following": True, "is_ignored": False}
+
+
+@router.post("/api/series/{series_id}/unfollow")
+async def unfollow_series(series_id: int, session: Session = Depends(_get_session)):
+    row = _get_series_or_404(session, series_id)
+    row.is_following = False
+    row.updated_at = datetime.utcnow()
+    session.commit()
+    return {"id": row.id, "title": row.title, "is_following": False, "is_ignored": row.is_ignored}
 
 
 @router.post("/api/series/{series_id}/ignore")
 async def ignore_series(series_id: int, session: Session = Depends(_get_session)):
-    row = session.query(Series).filter(Series.id == series_id).first()
-    if not row:
-        raise HTTPException(status_code=404, detail="Series not found")
+    row = _get_series_or_404(session, series_id)
     row.is_ignored = True
+    row.is_following = False
     row.updated_at = datetime.utcnow()
     session.commit()
-    return {"id": row.id, "title": row.title, "is_ignored": True}
+    return {"id": row.id, "title": row.title, "is_following": False, "is_ignored": True}
 
 
 @router.post("/api/series/{series_id}/unignore")
 async def unignore_series(series_id: int, session: Session = Depends(_get_session)):
-    row = session.query(Series).filter(Series.id == series_id).first()
-    if not row:
-        raise HTTPException(status_code=404, detail="Series not found")
+    row = _get_series_or_404(session, series_id)
     row.is_ignored = False
     row.updated_at = datetime.utcnow()
     session.commit()
-    return {"id": row.id, "title": row.title, "is_ignored": False}
+    return {"id": row.id, "title": row.title, "is_following": row.is_following, "is_ignored": False}
 
 
 @router.post("/api/series/episodes/{episode_id}/read")
@@ -311,11 +356,10 @@ async def mark_all_movies_read(
 @router.post("/api/series/read-all")
 async def mark_all_series_read(
     session: Session = Depends(_get_session),
-    ignored: bool = Query(default=False),
+    category: str = Query(default="following"),
 ):
-    series_ids = [
-        s.id for s in session.query(Series).filter(Series.is_ignored == ignored).all()
-    ]
+    cat_filter = _series_category_filter(category)
+    series_ids = [s.id for s in session.query(Series).filter(cat_filter).all()]
     count = session.query(SeriesEpisode).filter(
         SeriesEpisode.series_id.in_(series_ids),
         SeriesEpisode.is_read == False,
@@ -325,9 +369,15 @@ async def mark_all_series_read(
 
 
 @router.post("/api/series/ignore-all")
-async def ignore_all_series(session: Session = Depends(_get_session)):
-    count = session.query(Series).filter(Series.is_ignored == False).update(
-        {"is_ignored": True}, synchronize_session=False
+async def ignore_all_series(
+    session: Session = Depends(_get_session),
+    category: str = Query(default="following"),
+):
+    if category not in ("inbox", "following"):
+        raise HTTPException(status_code=422, detail="category must be 'inbox' or 'following'")
+    cat_filter = _series_category_filter(category)
+    count = session.query(Series).filter(cat_filter).update(
+        {"is_ignored": True, "is_following": False}, synchronize_session=False
     )
     session.commit()
     return {"ignored": count}
