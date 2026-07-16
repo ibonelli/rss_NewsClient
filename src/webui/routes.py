@@ -181,23 +181,57 @@ async def enrich(
 # Series
 # ---------------------------------------------------------------------------
 
-_SERIES_CATEGORIES = {"inbox", "following", "ignored"}
+_SERIES_CATEGORIES = {"inbox", "ongoing", "following", "ignored"}
 
 
-def _series_category_filter(category: str):
+def _earliest_season_episode_by_series(session: Session, series_ids: list[int]) -> dict[int, tuple[int, int]]:
+    """Map each series_id to the (season, episode) of its earliest-ingested episode.
+
+    Season-0 specials are excluded (FR-088) — "earliest" means the lowest `id`
+    (insertion order) among episodes with season >= 1. A series with no such
+    episode yet is simply absent from the returned map.
+    """
+    if not series_ids:
+        return {}
+    rows = (
+        session.query(SeriesEpisode.series_id, SeriesEpisode.season, SeriesEpisode.episode)
+        .filter(SeriesEpisode.series_id.in_(series_ids), SeriesEpisode.season >= 1)
+        .order_by(SeriesEpisode.series_id, SeriesEpisode.id.asc())
+        .all()
+    )
+    earliest: dict[int, tuple[int, int]] = {}
+    for series_id, season, episode in rows:
+        earliest.setdefault(series_id, (season, episode))
+    return earliest
+
+
+def _series_category_filter(session: Session, category: str):
     """Build the SQLAlchemy filter expression for a series category.
 
-    Category is derived from two independent booleans rather than stored
-    directly (see Series model): inbox = both false (default, untriaged),
-    following = is_following true, ignored = is_ignored true.
+    Following/Ignored are stored booleans. Inbox/OnGoing split the untriaged
+    bucket (is_following=False, is_ignored=False) by each series' earliest
+    ingested episode (FR-088) — computed at query time, never stored, mirroring
+    the Movie Flagged/Un-Flagged pattern.
     """
     if category not in _SERIES_CATEGORIES:
         raise HTTPException(status_code=422, detail=f"Invalid category: {category!r}")
-    if category == "inbox":
-        return and_(Series.is_following == False, Series.is_ignored == False)
     if category == "following":
         return and_(Series.is_following == True, Series.is_ignored == False)
-    return Series.is_ignored == True
+    if category == "ignored":
+        return Series.is_ignored == True
+
+    untriaged_ids = [
+        sid for (sid,) in session.query(Series.id)
+        .filter(Series.is_following == False, Series.is_ignored == False)
+        .all()
+    ]
+    earliest = _earliest_season_episode_by_series(session, untriaged_ids)
+    inbox_ids = [sid for sid in untriaged_ids if earliest.get(sid) == (1, 1)]
+    if category == "inbox":
+        return Series.id.in_(inbox_ids)
+    inbox_id_set = set(inbox_ids)
+    ongoing_ids = [sid for sid in untriaged_ids if sid not in inbox_id_set]
+    return Series.id.in_(ongoing_ids)
 
 
 def _get_series_or_404(session: Session, series_id: int) -> Series:
@@ -258,7 +292,7 @@ async def get_series(
     category: str = Query(default="following"),
     session: Session = Depends(_get_session),
 ):
-    cat_filter = _series_category_filter(category)
+    cat_filter = _series_category_filter(session, category)
     rows = (
         session.query(Series, SeriesEpisode)
         .join(SeriesEpisode, SeriesEpisode.series_id == Series.id)
@@ -358,7 +392,7 @@ async def mark_all_series_read(
     session: Session = Depends(_get_session),
     category: str = Query(default="following"),
 ):
-    cat_filter = _series_category_filter(category)
+    cat_filter = _series_category_filter(session, category)
     series_ids = [s.id for s in session.query(Series).filter(cat_filter).all()]
     count = session.query(SeriesEpisode).filter(
         SeriesEpisode.series_id.in_(series_ids),
@@ -373,9 +407,9 @@ async def ignore_all_series(
     session: Session = Depends(_get_session),
     category: str = Query(default="following"),
 ):
-    if category not in ("inbox", "following"):
-        raise HTTPException(status_code=422, detail="category must be 'inbox' or 'following'")
-    cat_filter = _series_category_filter(category)
+    if category not in ("inbox", "ongoing", "following"):
+        raise HTTPException(status_code=422, detail="category must be 'inbox', 'ongoing', or 'following'")
+    cat_filter = _series_category_filter(session, category)
     count = session.query(Series).filter(cat_filter).update(
         {"is_ignored": True, "is_following": False}, synchronize_session=False
     )

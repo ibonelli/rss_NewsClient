@@ -1,5 +1,4 @@
-1. In the series feed we need different views: Only title or full. And there should be a filter (in the WebUI) so we can show only new series (if it is not in Season 1 Episode 1 we could have a "Potentially Ignore" category?
-
+1. In the series feed the "Only Title" version should be a collapsed version of the full view. We must have an icon that can expand/collapse each series item individually. And the "Only Title"/"Full" buttons on the top remain to reset the view and bring all items to the view setting.
 2. The export functionality in the News type feed should apply to the current view (not only for unread as it do now).
 3. For all feeds there should be a new view that's all (read & unread) and which is order by date of ingestion and it shows unread items before read items.
 

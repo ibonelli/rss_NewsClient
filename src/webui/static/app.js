@@ -501,6 +501,7 @@ function NewsTab({ initialFeedName }) {
 function SeriesTab() {
     const [isRead, setIsRead] = useState(false);
     const [category, setCategory] = useState("following");
+    const [viewMode, setViewMode] = useState("full");
     const [seriesList, setSeriesList] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -609,10 +610,18 @@ function SeriesTab() {
                 <div className="view-toggle">
                     <button className=${`btn btn-sm ${category === "inbox" ? "btn-active" : "btn-secondary"}`}
                         onClick=${() => handleSelectCategory("inbox")}>Inbox</button>
+                    <button className=${`btn btn-sm ${category === "ongoing" ? "btn-active" : "btn-secondary"}`}
+                        onClick=${() => handleSelectCategory("ongoing")}>OnGoing</button>
                     <button className=${`btn btn-sm ${category === "following" ? "btn-active" : "btn-secondary"}`}
                         onClick=${() => handleSelectCategory("following")}>Following</button>
                     <button className=${`btn btn-sm ${category === "ignored" ? "btn-active" : "btn-secondary"}`}
                         onClick=${() => handleSelectCategory("ignored")}>Ignored</button>
+                </div>
+                <div className="view-toggle">
+                    <button className=${`btn btn-sm ${viewMode === "title" ? "btn-active" : "btn-secondary"}`}
+                        onClick=${() => setViewMode("title")}>Only Title</button>
+                    <button className=${`btn btn-sm ${viewMode === "full" ? "btn-active" : "btn-secondary"}`}
+                        onClick=${() => setViewMode("full")}>Full</button>
                 </div>
                 <div className="tab-count">${seriesList.length} series</div>
                 ${!isRead && html`
@@ -632,13 +641,18 @@ function SeriesTab() {
                         ? "No ignored series."
                         : category === "inbox"
                         ? "No series in Inbox."
+                        : category === "ongoing"
+                        ? "No OnGoing series."
                         : html`<p>No series to display. Run the ingester first:</p><code>python src/cli/main.py</code>`}
                 </div>`
                 : seriesList.map(series => html`
                     <div key=${series.id} className="series-block">
                         <h2 className="series-title">
                             <a href=${series.imdb_url} target="_blank" rel="noreferrer">${series.title}</a>
-                            ${category === "inbox" && html`
+                            ${viewMode === "title" && html`
+                                <${Badge} className="episode-count-badge">${series.seasons.reduce((n, s) => n + s.episodes.length, 0)}</${Badge}>
+                            `}
+                            ${(category === "inbox" || category === "ongoing") && html`
                                 <button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${() => handleFollow(series.id)}>Follow</button>
                                 <button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${() => handleIgnore(series.id)}>Ignore</button>
                             `}
@@ -650,7 +664,7 @@ function SeriesTab() {
                                 <button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${() => handleUnignore(series.id)}>Unignore</button>
                             `}
                         </h2>
-                        ${series.seasons.map(season => html`
+                        ${viewMode === "full" && series.seasons.map(season => html`
                             <div key=${season.season} className="season-block">
                                 <h3 className="season-header">Season ${season.season}</h3>
                                 <div className="episode-list">
