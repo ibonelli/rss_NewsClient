@@ -72,26 +72,38 @@
 - **FR-051:** The Series tab MUST provide an Ignore/Unignore action at the series title level. Setting `is_ignored = true` moves the series to the Ignored view; clearing it returns it to the Inbox view (see FR-085). Ignored status MUST be persisted and survive app restart.
 - **FR-052:** The Series tab MUST provide two independent toggle controls, without a page reload:
   - **Unread/Read toggle** — Unread (default): episodes with `is_read=false`; Read: episodes with `is_read=true`
-  - **Inbox/Following/Ignored toggle (three-way)** — Following (default, unchanged): `is_following=true` and `is_ignored=false`; Inbox: `is_following=false` and `is_ignored=false` (untriaged); Ignored: `is_ignored=true` (see FR-081)
+  - **Inbox/OnGoing/Following/Ignored toggle (four-way)** — Following (default, unchanged): `is_following=true` and `is_ignored=false`; Inbox: `is_following=false`, `is_ignored=false`, and earliest-ingested episode is S01E01 (see FR-081, FR-088); OnGoing: `is_following=false`, `is_ignored=false`, and earliest-ingested episode is NOT S01E01 (see FR-088); Ignored: `is_ignored=true`
   - Default on load: Unread + Following. A series title appears only if it has at least one episode matching the read filter.
 - **FR-053:** When new episodes are ingested for a series whose existing episodes are marked ignored, the new episodes MUST inherit the ignored status automatically.
 - **FR-054:** The Ignore/Unignore, Follow/Unfollow actions MUST operate at the series title level — a single action sets or clears the relevant flag on the `series` row, affecting every episode row sharing that title.
-- **FR-081:** The Series tab MUST provide three mutually-exclusive categories, derived from two independent booleans on the `series` row (`is_following`, `is_ignored`):
-  - **Inbox** — `is_following=false` and `is_ignored=false`. Default category for a newly-created series that does not match a follow filter (see FR-084).
+- **FR-081:** The Series tab MUST provide four mutually-exclusive categories. Two are derived from independent booleans on the `series` row (`is_following`, `is_ignored`); the other two split the untriaged bucket using a derived, non-stored check on episode data (see FR-088):
+  - **Inbox** — `is_following=false`, `is_ignored=false`, and the series' earliest-ingested episode is exactly Season 1 Episode 1. Default category for a newly-created, genuinely-new series that does not match a follow filter (see FR-084).
+  - **OnGoing** — `is_following=false`, `is_ignored=false`, and the series' earliest-ingested episode is NOT Season 1 Episode 1 (see FR-088 for the exact rule, including the specials edge case). A series that was already mid-run when first discovered by the feed.
   - **Following** — `is_following=true` and `is_ignored=false`. Explicitly followed by the user (manually or via a follow filter).
   - **Ignored** — `is_ignored=true`. Whenever `is_ignored=true`, `is_following` MUST be `false` (see FR-085) — a series is never simultaneously Following and Ignored.
-- **FR-082:** The Series tab MUST provide a three-way view toggle (Inbox / Following / Ignored) replacing the previous two-way Following/Ignored toggle. Default view on load remains **Following**, unchanged from current behavior.
+- **FR-082:** The Series tab MUST provide a four-way view toggle (Inbox / OnGoing / Following / Ignored) replacing the previous three-way Inbox/Following/Ignored toggle. Default view on load remains **Following**, unchanged from current behavior.
 - **FR-083:** `config.yaml` MUST support a `series_feed.follow_filters` list of `{name, pattern}` entries (same shape as the existing `news_feeds[].filters`), used to auto-assign new series to Following at ingest time.
-- **FR-084:** When the CLI Ingester creates a NEW `series` row (first episode ever seen for that title), it MUST test the title against every configured `series_feed.follow_filters` pattern; on any match, the row MUST be created with `is_following=true` instead of the Inbox default. This check MUST run only at row-creation time:
+- **FR-084:** When the CLI Ingester creates a NEW `series` row (first episode ever seen for that title), it MUST test the title against every configured `series_feed.follow_filters` pattern; on any match, the row MUST be created with `is_following=true` instead of the Inbox/OnGoing default. This check MUST run only at row-creation time:
   - It MUST NOT re-run against already-existing series on subsequent ingester runs.
   - Editing `follow_filters` in `config.yaml` MUST have no retroactive effect on series already ingested.
 - **FR-085:** The Series tab MUST provide explicit user actions to move a series between categories:
-  - **"Follow"** (visible in Inbox view) — sets `is_following=true`.
-  - **"Unfollow"** (visible in Following view) — sets `is_following=false`, returning the series to Inbox.
-  - **"Ignore"** (visible in Inbox and Following views) — sets `is_ignored=true` AND `is_following=false`.
-  - **"Unignore"** (visible in Ignored view) — sets `is_ignored=false`, returning the series to Inbox (not Following).
+  - **"Follow"** (visible in Inbox and OnGoing views) — sets `is_following=true`.
+  - **"Unfollow"** (visible in Following view) — sets `is_following=false`, returning the series to Inbox or OnGoing (whichever its earliest-ingested episode determines — see FR-088).
+  - **"Ignore"** (visible in Inbox, OnGoing, and Following views) — sets `is_ignored=true` AND `is_following=false`.
+  - **"Unignore"** (visible in Ignored view) — sets `is_ignored=false`, returning the series to Inbox or OnGoing (whichever its earliest-ingested episode determines — not Following).
   - A series the user has manually moved via any of these actions MUST NOT be altered by follow-filter matching (FR-084) on subsequent ingester runs — that check only ever applies once, at initial row creation.
   - All actions MUST persist and survive app restart.
+- **FR-088:** The Inbox/OnGoing split MUST be computed at query time (no new column on `series`), using each series' earliest-ingested episode (the `series_episodes` row with the lowest `id`/earliest `created_at` for that `series_id`) among rows where `is_following=false` and `is_ignored=false`:
+  - Season 0 (special) episodes MUST be excluded when determining "earliest" — the rule looks at the earliest episode with `season >= 1`.
+  - If that episode's `(season, episode)` is exactly `(1, 1)`, the series belongs to **Inbox**.
+  - Otherwise (including the case where no `season >= 1` episode exists yet), the series belongs to **OnGoing**.
+  - This determination MUST NOT be stored — it is recomputed from `series_episodes` on every request, mirroring the existing Movie Flagged/Un-Flagged pattern (FR-056).
+- **FR-089:** The Series tab MUST provide an Only-Title / Full view mode toggle:
+  - One shared control applies across all four categories (Inbox, OnGoing, Following, Ignored) — not selected independently per category.
+  - **Full** (default) — current behavior: each series expands into its season → episode → quality-variant tree.
+  - **Only Title** — each series row collapses to: title (linked to IMDb, per FR-045), an unread-episode-count badge, and the same category action buttons available in Full view (Follow/Unfollow/Ignore/Unignore) for that category — but no expandable season/episode/quality list.
+  - The toggle MUST NOT be persisted — it resets to Full on every page load, consistent with the existing Read/Unread and category toggles (see FR-052).
+  - Switching the toggle MUST NOT trigger a page reload or change which series/episodes are in view — it only changes how each row is rendered.
 
 ### Web Application — News
 - **FR-028:** The web application MUST provide a separate "News" tab, distinct from the Movies tab.
@@ -132,7 +144,7 @@
 
 ### Mark All as Read
 - **FR-048:** The Movies tab MUST provide a "Mark All Read" button when the **Unread** toggle is active. It marks only the currently visible movies (respecting the current Flagged/Un-Flagged state) as read, and removes them from the view. The button MUST NOT appear when the Read toggle is active.
-- **FR-049:** The Series tab MUST provide a "Mark All Read" button when the **Unread** toggle is active. It marks only the unread episodes of series in the currently visible Inbox, Following, or Ignored group as read and removes them from the view. The button MUST NOT appear when the Read toggle is active.
+- **FR-049:** The Series tab MUST provide a "Mark All Read" button when the **Unread** toggle is active. It marks only the unread episodes of series in the currently visible Inbox, OnGoing, Following, or Ignored group as read and removes them from the view. The button MUST NOT appear when the Read toggle is active. This behavior is unaffected by the Only-Title/Full view mode (FR-089).
 - **FR-050:** Every news feed view MUST provide a "Mark All Read" button when the **Unread** toggle is active. It marks all currently unread items for that feed as read and clears the view. The button MUST NOT appear when the Read toggle is active.
 
 ### Read Tracking
@@ -152,7 +164,7 @@
 
 ## 5) Data Requirements
 - **Movies:** title, year, genre(s), torrent URL, quality/resolution, IMDb ID (from enrichment), IMDb rating, RT expert rating, RT audience rating, poster URL, feed entry date, enrichment date, read status
-- **Series (`series` table):** series title (unique), IMDb ID (nullable), is_ignored flag, is_following flag
+- **Series (`series` table):** series title (unique), IMDb ID (nullable), is_ignored flag, is_following flag. The Inbox/OnGoing category split is NOT a stored field — it is derived at query time from the series' earliest-ingested episode (FR-088).
 - **Series episodes (`series_episodes` table):** FK → series, season number, episode number, quality variants (JSON list of `{quality, torrent_page_url}`), RSS entry date, ingestion timestamp, is_read flag, ignored status
 - **News — `news_items` (all feed types):** title, URL, publication date, source feed name, full content, ingestion timestamp, read status, matched_filter (nullable)
 - **News — `ai_filtered_views`:** legacy table retained on disk; no longer written or read by the application
@@ -189,8 +201,14 @@
 - **AC-027:** A brand-new series (first episode ever seen) is created in Inbox by default, unless its title matches a `series_feed.follow_filters` pattern, in which case it is created directly in Following.
 - **AC-028:** Editing `series_feed.follow_filters` in `config.yaml` has no retroactive effect on already-ingested Inbox series; only series created after the edit are evaluated against the new patterns.
 - **AC-029:** A series the user has manually set to Following or Ignored is never moved by follow-filter matching on subsequent ingester runs.
-- **AC-030:** Migrating existing data: all series with the pre-migration `is_ignored=false` move to Inbox (`is_following=false`, `is_ignored=false`); pre-migration `is_ignored=true` rows remain Ignored (`is_ignored=true`, `is_following=false`).
+- **AC-030:** Migrating existing data: all series with the pre-migration `is_ignored=false` move to Inbox or OnGoing per FR-088 (`is_following=false`, `is_ignored=false`); pre-migration `is_ignored=true` rows remain Ignored (`is_ignored=true`, `is_following=false`).
 - **AC-031:** The default Series tab view on load is unchanged: Unread + Following.
+- **AC-032:** A series whose earliest-ingested episode is exactly S01E01 appears in the Inbox view; a series whose earliest-ingested episode is any other `(season, episode)` combination appears in the OnGoing view instead.
+- **AC-033:** A series whose earliest-ingested episode is a Season 0 special is treated as Inbox once its earliest `season >= 1` episode is S01E01 — the special episode is excluded from the OnGoing determination.
+- **AC-034:** The four-way category toggle (Inbox/OnGoing/Following/Ignored) shows the correct series list for each option without a page reload; the Follow and Ignore actions are available from both the Inbox and OnGoing views.
+- **AC-035:** Switching a series from Following or Ignored back to the untriaged bucket (via Unfollow or Unignore) places it in Inbox or OnGoing according to FR-088, never back into Following or Ignored.
+- **AC-036:** Switching between Only Title and Full view mode shows/hides each series' season/episode/quality tree while keeping the title, unread-count badge, and category action buttons visible in both modes, with no page reload and no change to which series/episodes are in view.
+- **AC-037:** The Only-Title/Full toggle is shared across all four categories and resets to Full on page reload (not persisted in localStorage or the database).
 
 - **AC-021:** Design items from configured design feeds appear in the Design tab, displayed as cards with image (if available), title linked to the article URL, and summary.
 - **AC-022:** Items without an image in the RSS feed appear as cards with title and summary only — no placeholder is shown.

@@ -66,11 +66,11 @@ src/
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/api/series` | Series grouped by title → season → episode; `read` bool (default `false`) × `category` enum `inbox`\|`following`\|`ignored` (default `following`) |
+| GET | `/api/series` | Series grouped by title → season → episode; `read` bool (default `false`) × `category` enum `inbox`\|`ongoing`\|`following`\|`ignored` (default `following`). Inbox/OnGoing split is derived at query time from each series' earliest-ingested episode (FR-088), not stored. |
 | POST | `/api/series/{series_id}/follow` | Set `is_following = true` on `series` row |
-| POST | `/api/series/{series_id}/unfollow` | Set `is_following = false` on `series` row (→ Inbox) |
+| POST | `/api/series/{series_id}/unfollow` | Set `is_following = false` on `series` row (→ Inbox or OnGoing, per FR-088) |
 | POST | `/api/series/{series_id}/ignore` | Set `is_ignored = true`, `is_following = false` on `series` row |
-| POST | `/api/series/{series_id}/unignore` | Set `is_ignored = false` on `series` row (→ Inbox) |
+| POST | `/api/series/{series_id}/unignore` | Set `is_ignored = false` on `series` row (→ Inbox or OnGoing, per FR-088) |
 | POST | `/api/series/episodes/{episode_id}/read` | Mark episode as read |
 | POST | `/api/series/episodes/{episode_id}/unread` | Mark episode as unread |
 | POST | `/api/series/read-all` | Mark all unread episodes as read |

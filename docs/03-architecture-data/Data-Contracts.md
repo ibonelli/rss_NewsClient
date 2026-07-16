@@ -7,8 +7,8 @@
 - **Owner:** CLI Ingester (creates/updates); Web UI (reads, marks as read, triggers enrichment)
 
 ### Series
-- **Definition:** One row per unique series title. Holds title-level metadata: `imdb_id` and the category flags `is_following` / `is_ignored`, which together derive one of three mutually-exclusive categories: Inbox (both false, default), Following (`is_following=true`), Ignored (`is_ignored=true`, `is_following` always false in that case).
-- **Owner:** CLI Ingester (creates on first episode seen for title — sets `is_following=true` if the title matches a configured `series_feed.follow_filters` pattern, else Inbox default); Web UI (reads; sets/clears `is_following` and `is_ignored` via Follow/Unfollow/Ignore/Unignore actions)
+- **Definition:** One row per unique series title. Holds title-level metadata: `imdb_id` and the category flags `is_following` / `is_ignored`. Combined with a derived, non-stored check on the series' earliest-ingested episode, these produce one of four mutually-exclusive UI categories: Inbox (untriaged, earliest episode is S01E01, default), OnGoing (untriaged, earliest episode is not S01E01 — discovered mid-run), Following (`is_following=true`), Ignored (`is_ignored=true`, `is_following` always false in that case). See FR-088 for the exact Inbox/OnGoing rule.
+- **Owner:** CLI Ingester (creates on first episode seen for title — sets `is_following=true` if the title matches a configured `series_feed.follow_filters` pattern, else Inbox/OnGoing default); Web UI (reads; sets/clears `is_following` and `is_ignored` via Follow/Unfollow/Ignore/Unignore actions)
 
 ### SeriesEpisode
 - **Definition:** One row per unique `(series_id, season, episode)` combination. Holds episode-level data: quality variants, feed date, read status.
@@ -86,7 +86,13 @@ class Series(Base):
     updated_at: datetime
 ```
 
-Category is derived, not stored directly: Inbox = `is_following=False and is_ignored=False` (default); Following = `is_following=True and is_ignored=False`; Ignored = `is_ignored=True`. The app enforces mutual exclusivity — setting `is_ignored=True` always clears `is_following`; `is_following` can only be set from Inbox.
+Category is derived, not stored directly. Two flags plus one computed check on `series_episodes` produce four mutually-exclusive categories:
+- **Following** = `is_following=True and is_ignored=False`
+- **Ignored** = `is_ignored=True`
+- **Inbox** = `is_following=False and is_ignored=False` AND the series' earliest-ingested episode (lowest `id`/earliest `created_at` in `series_episodes` for that `series_id`, skipping `season=0` specials) is `(season=1, episode=1)`
+- **OnGoing** = `is_following=False and is_ignored=False` AND that earliest episode is NOT `(season=1, episode=1)`
+
+The app enforces mutual exclusivity — setting `is_ignored=True` always clears `is_following`; `is_following` can only be set from Inbox or OnGoing. The Inbox/OnGoing split (FR-088) is computed at query time on every request, never written to a column — same pattern as the Movie Flagged/Un-Flagged split (FR-056).
 
 **Indexes:**
 - `ix_series_title` UNIQUE on `title` — primary dedup key
@@ -486,9 +492,15 @@ On failure: same shape with all rating fields `null`, `imdb_id` `null`, and `enr
 
 Query params:
 - `read` (bool, default `false`) — `false` = episodes with `is_read=false` (Unread); `true` = episodes with `is_read=true` (Read)
-- `category` (string enum, default `following`) — one of `inbox`, `following`, `ignored`. Replaces the old boolean `ignored` param now that there are three categories: `inbox` → `is_following=false, is_ignored=false`; `following` → `is_following=true, is_ignored=false`; `ignored` → `is_ignored=true`.
+- `category` (string enum, default `following`) — one of `inbox`, `ongoing`, `following`, `ignored`:
+  - `following` → `is_following=true, is_ignored=false`
+  - `ignored` → `is_ignored=true`
+  - `inbox` → `is_following=false, is_ignored=false`, AND the series' earliest-ingested episode (skipping season-0 specials) is `(season=1, episode=1)`
+  - `ongoing` → `is_following=false, is_ignored=false`, AND that earliest episode is NOT `(season=1, episode=1)` (FR-088)
 
 A series title appears in the response only if it has at least one episode matching the `read` filter.
+
+The Only-Title/Full view mode (FR-089) is a purely client-side rendering choice — it has no corresponding query param or response field. The client always receives the full `seasons`/`episodes` tree shown below and chooses whether to render it (Full) or collapse it to a title + count (Only Title, where the count is `len(episodes)` across all seasons in the response).
 
 ```json
 {
@@ -549,7 +561,7 @@ Sets `is_read` on a `series_episodes` row.
 ### POST `/api/series/read-all`
 
 Query params:
-- `category` (string enum, default `following`) — one of `inbox`, `following`, `ignored`; scopes which unread episodes are marked read to the given category only (see `GET /api/series` above)
+- `category` (string enum, default `following`) — one of `inbox`, `ongoing`, `following`, `ignored`; scopes which unread episodes are marked read to the given category only (see `GET /api/series` above)
 
 Only `is_read=false` episodes within the scoped series are affected.
 

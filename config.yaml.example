@@ -14,6 +14,16 @@ series_feed:
   follow_filters:
     - name: "example"
       pattern: "(Breaking Bad|Better Call Saul)"
+    - name: "Silo"
+      pattern: "Silo"
+    - name: "Pluribus"
+      pattern: "Pluribus"
+    - name: "Foundation"
+      pattern: "Foundation"
+    - name: "Strange New Worlds"
+      pattern: "Strange New Worlds"
+    - name: "Bad Monkey"
+      pattern: "Bad Monkey"
 
 alerting:
   smtp_host: "localhost"
