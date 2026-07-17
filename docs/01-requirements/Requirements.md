@@ -98,12 +98,14 @@
   - If that episode's `(season, episode)` is exactly `(1, 1)`, the series belongs to **Inbox**.
   - Otherwise (including the case where no `season >= 1` episode exists yet), the series belongs to **OnGoing**.
   - This determination MUST NOT be stored — it is recomputed from `series_episodes` on every request, mirroring the existing Movie Flagged/Un-Flagged pattern (FR-056).
-- **FR-089:** The Series tab MUST provide an Only-Title / Full view mode toggle:
-  - One shared control applies across all four categories (Inbox, OnGoing, Following, Ignored) — not selected independently per category.
-  - **Full** (default) — current behavior: each series expands into its season → episode → quality-variant tree.
-  - **Only Title** — each series row collapses to: title (linked to IMDb, per FR-045), an unread-episode-count badge, and the same category action buttons available in Full view (Follow/Unfollow/Ignore/Unignore) for that category — but no expandable season/episode/quality list.
-  - The toggle MUST NOT be persisted — it resets to Full on every page load, consistent with the existing Read/Unread and category toggles (see FR-052).
-  - Switching the toggle MUST NOT trigger a page reload or change which series/episodes are in view — it only changes how each row is rendered.
+- **FR-089:** The Series tab MUST provide per-series expand/collapse of the season → episode → quality-variant tree, plus a shared Only-Title / Full control that bulk-applies a setting to every visible series:
+  - **Full (expanded)** — a series row shows its season → episode → quality-variant tree.
+  - **Only Title (collapsed)** — a series row collapses to: title (linked to IMDb, per FR-045), an unread-episode-count badge, and the same category action buttons available in Full view (Follow/Unfollow/Ignore/Unignore) for that category — but no expandable season/episode/quality list.
+  - Each series row MUST show a disclosure chevron, and the entire title row (excluding the IMDb link and the category action buttons) MUST be clickable to toggle that single series between expanded and collapsed, independently of every other series row.
+  - The top-of-page **Only Title** / **Full** buttons apply across all four categories (Inbox, OnGoing, Following, Ignored) — not selected independently per category — and act as a bulk action: clicking one sets every currently visible series to that state and clears any individual per-series overrides made via the chevron/row click.
+  - Default on page load: **Full** (all rows expanded). The top-level setting MUST NOT be persisted — it resets to Full on every page load, consistent with the existing Read/Unread and category toggles (see FR-052).
+  - Switching the Read/Unread toggle or the Inbox/OnGoing/Following/Ignored category MUST also clear every per-series override, returning all rows to the current top-level Only-Title/Full setting (since the underlying series list just changed).
+  - None of the above MUST trigger a page reload or change which series/episodes are in view — only how each row is rendered.
 
 ### Web Application — News
 - **FR-028:** The web application MUST provide a separate "News" tab, distinct from the Movies tab.
@@ -207,8 +209,9 @@
 - **AC-033:** A series whose earliest-ingested episode is a Season 0 special is treated as Inbox once its earliest `season >= 1` episode is S01E01 — the special episode is excluded from the OnGoing determination.
 - **AC-034:** The four-way category toggle (Inbox/OnGoing/Following/Ignored) shows the correct series list for each option without a page reload; the Follow and Ignore actions are available from both the Inbox and OnGoing views.
 - **AC-035:** Switching a series from Following or Ignored back to the untriaged bucket (via Unfollow or Unignore) places it in Inbox or OnGoing according to FR-088, never back into Following or Ignored.
-- **AC-036:** Switching between Only Title and Full view mode shows/hides each series' season/episode/quality tree while keeping the title, unread-count badge, and category action buttons visible in both modes, with no page reload and no change to which series/episodes are in view.
-- **AC-037:** The Only-Title/Full toggle is shared across all four categories and resets to Full on page reload (not persisted in localStorage or the database).
+- **AC-036:** Clicking a series' title row (or its chevron) toggles that single series between expanded and collapsed without affecting any other series row, with no page reload and no change to which series/episodes are in view; the title, unread-count badge (collapsed only), and category action buttons remain visible in both states.
+- **AC-037:** The top-level Only-Title/Full buttons are shared across all four categories, bulk-apply their setting to every currently visible series (clearing individual per-series overrides), and reset to Full (all expanded) on page reload — never persisted in localStorage or the database. Switching the Read/Unread toggle or the category toggle also clears individual per-series overrides, returning every row to the current Only-Title/Full setting.
+- **AC-038:** Clicking the series title link (opens IMDb in a new tab) or any category action button (Follow/Unfollow/Ignore/Unignore) does not also toggle that series' expand/collapse state.
 
 - **AC-021:** Design items from configured design feeds appear in the Design tab, displayed as cards with image (if available), title linked to the article URL, and summary.
 - **AC-022:** Items without an image in the RSS feed appear as cards with title and summary only — no placeholder is shown.

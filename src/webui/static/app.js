@@ -502,11 +502,32 @@ function SeriesTab() {
     const [isRead, setIsRead] = useState(false);
     const [category, setCategory] = useState("following");
     const [viewMode, setViewMode] = useState("full");
+    const [collapsedOverrides, setCollapsedOverrides] = useState(new Set());
     const [seriesList, setSeriesList] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [markingAll, setMarkingAll] = useState(false);
     const [ignoringAll, setIgnoringAll] = useState(false);
+
+    const isCollapsed = (seriesId) =>
+        collapsedOverrides.has(seriesId) ? viewMode !== "title" : viewMode === "title";
+
+    const handleToggleCollapse = (seriesId) => {
+        setCollapsedOverrides(prev => {
+            const next = new Set(prev);
+            if (next.has(seriesId)) {
+                next.delete(seriesId);
+            } else {
+                next.add(seriesId);
+            }
+            return next;
+        });
+    };
+
+    const handleSetViewMode = (mode) => {
+        setViewMode(mode);
+        setCollapsedOverrides(new Set());
+    };
 
     const loadSeries = (read, cat) => {
         setLoading(true);
@@ -522,12 +543,14 @@ function SeriesTab() {
     const handleToggleRead = () => {
         const next = !isRead;
         setIsRead(next);
+        setCollapsedOverrides(new Set());
         loadSeries(next, category);
     };
 
     const handleSelectCategory = (next) => {
         if (next === category) return;
         setCategory(next);
+        setCollapsedOverrides(new Set());
         loadSeries(isRead, next);
     };
 
@@ -619,9 +642,9 @@ function SeriesTab() {
                 </div>
                 <div className="view-toggle">
                     <button className=${`btn btn-sm ${viewMode === "title" ? "btn-active" : "btn-secondary"}`}
-                        onClick=${() => setViewMode("title")}>Only Title</button>
+                        onClick=${() => handleSetViewMode("title")}>Only Title</button>
                     <button className=${`btn btn-sm ${viewMode === "full" ? "btn-active" : "btn-secondary"}`}
-                        onClick=${() => setViewMode("full")}>Full</button>
+                        onClick=${() => handleSetViewMode("full")}>Full</button>
                 </div>
                 <div className="tab-count">${seriesList.length} series</div>
                 ${!isRead && html`
@@ -647,24 +670,25 @@ function SeriesTab() {
                 </div>`
                 : seriesList.map(series => html`
                     <div key=${series.id} className="series-block">
-                        <h2 className="series-title">
-                            <a href=${series.imdb_url} target="_blank" rel="noreferrer">${series.title}</a>
-                            ${viewMode === "title" && html`
+                        <h2 className="series-title" onClick=${() => handleToggleCollapse(series.id)}>
+                            <span className="series-chevron">${isCollapsed(series.id) ? "▸" : "▾"}</span>
+                            <a href=${series.imdb_url} target="_blank" rel="noreferrer" onClick=${(e) => e.stopPropagation()}>${series.title}</a>
+                            ${isCollapsed(series.id) && html`
                                 <${Badge} className="episode-count-badge">${series.seasons.reduce((n, s) => n + s.episodes.length, 0)}</${Badge}>
                             `}
                             ${(category === "inbox" || category === "ongoing") && html`
-                                <button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${() => handleFollow(series.id)}>Follow</button>
-                                <button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${() => handleIgnore(series.id)}>Ignore</button>
+                                <button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${(e) => { e.stopPropagation(); handleFollow(series.id); }}>Follow</button>
+                                <button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${(e) => { e.stopPropagation(); handleIgnore(series.id); }}>Ignore</button>
                             `}
                             ${category === "following" && html`
-                                <button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${() => handleUnfollow(series.id)}>Unfollow</button>
-                                <button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${() => handleIgnore(series.id)}>Ignore</button>
+                                <button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${(e) => { e.stopPropagation(); handleUnfollow(series.id); }}>Unfollow</button>
+                                <button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${(e) => { e.stopPropagation(); handleIgnore(series.id); }}>Ignore</button>
                             `}
                             ${category === "ignored" && html`
-                                <button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${() => handleUnignore(series.id)}>Unignore</button>
+                                <button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${(e) => { e.stopPropagation(); handleUnignore(series.id); }}>Unignore</button>
                             `}
                         </h2>
-                        ${viewMode === "full" && series.seasons.map(season => html`
+                        ${!isCollapsed(series.id) && series.seasons.map(season => html`
                             <div key=${season.season} className="season-block">
                                 <h3 className="season-header">Season ${season.season}</h3>
                                 <div className="episode-list">

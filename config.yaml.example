@@ -76,7 +76,27 @@ webapp:
 # Each feed has a type: unfiltered | filtered
 news_feeds:
   - name: "Tech News"
-    url: "https://example.com/tech/feed"
+    url: "https://www.scmp.com/rss/320663/feed"
+    type: unfiltered
+
+  - name: "Internacional News El Mundo"
+    url: "https://e00-elmundo.uecdn.es/elmundo/rss/internacional.xml"
+    type: unfiltered
+
+  - name: "Internacional News El Pais"
+    url: "http://ep00.epimg.net/rss/internacional/portada.xml"
+    type: unfiltered
+
+  - name: "Torrent Freak"
+    url: "http://feeds.feedburner.com/Torrentfreak"
+    type: unfiltered
+
+  - name: "Visual Capitalist"
+    url: "https://feeds.feedburner.com/visualcapitalist"
+    type: unfiltered
+
+  - name: "IEEE Spectrum"
+    url: "https://spectrum.ieee.org/feeds/feed.rss"
     type: unfiltered
 
   - name: "Security"

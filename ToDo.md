@@ -1,14 +1,16 @@
-1. In the series feed the "Only Title" version should be a collapsed version of the full view. We must have an icon that can expand/collapse each series item individually. And the "Only Title"/"Full" buttons on the top remain to reset the view and bring all items to the view setting.
+Ready to go live...
+
+## For later
+1. We now have "Mark as Read" button. Add same buttons with "all above" & "all below".
 2. The export functionality in the News type feed should apply to the current view (not only for unread as it do now).
 3. For all feeds there should be a new view that's all (read & unread) and which is order by date of ingestion and it shows unread items before read items.
 
-## This is useful for all categories
-1. We now have "Mark as Read" button. Add same buttons with "all above" & "all below".
-
-## Is this really a Bug??
-1. "Ignore all" in series does not restrict to the present filter. For example, if "Unread" & "Not-Ignored", the "Ignore all" should only apply to the filtered entries.
-
 ----
+
+General
+
+When coding, generate a plan and ask for all permissions at once. And also ask for general tool access, not particular commands.
+Ask for general tool access, not particular commands. If necessary, create a plan and ask for all permissions at once.
 
 BigChange
 

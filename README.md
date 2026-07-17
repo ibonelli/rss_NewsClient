@@ -9,6 +9,8 @@ The fetch CLI is designed to work with cron. For example running it every 15 min
 .venv/bin/python3 src/webui/main.py
 ```
 
+The web UI is a long-running service and has no auto-reload, any changes to routes.py/app.js will require a manual restart to take effect.
+
 ## First install & setup (using MySQL)
 
 ```bash

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Changed — Series Only-Title/Full Becomes Per-Series Collapse
+- Series tab (`app.js`): the season/episode/quality tree is now collapsible per series row instead of only all-at-once — new `collapsedOverrides` state (a `Set` of series IDs) flips the base Only-Title/Full setting for individual rows; `isCollapsed(seriesId)` derives the effective render state
+- Each series row shows a disclosure chevron (▸ collapsed / ▾ expanded, no icon library used); the entire title row is clickable to toggle that one series — the IMDb link and Follow/Unfollow/Ignore/Unignore buttons `stopPropagation()` so they don't also trigger the toggle
+- The top "Only Title" / "Full" buttons keep their labels but now act as a bulk action: clicking one sets every currently visible series to that state and clears all individual per-series overrides (`handleSetViewMode`)
+- Switching the Read/Unread toggle or the Inbox/OnGoing/Following/Ignored category also clears per-series overrides, since the underlying series list just changed
+- `styles.css`: `.series-title` gains `cursor: pointer`; new `.series-chevron` rule
+- No backend/API/schema change — purely client-rendering state, still not persisted (resets to Full on page load)
+- See FR-089, AC-036–AC-038
+
 ### Added — Series Three-Category Model: Inbox/Following/Ignored
 - `series` table gains a new `is_following` boolean column (default `false`) alongside the existing `is_ignored` (`models.py`); category is derived: Inbox = both false (default), Following = `is_following=true`, Ignored = `is_ignored=true` (always implies `is_following=false`, enforced in the API layer, not the DB)
 - `tools/migrate_005_series_following.sh` — idempotent ALTER TABLE (SQLite + MySQL); existing rows default to `is_following=false`, so all pre-migration non-ignored series move to Inbox, and existing Ignored rows are unaffected
