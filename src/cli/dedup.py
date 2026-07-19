@@ -13,7 +13,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from src.common.models import Movie, Series, SeriesEpisode
+from src.common.models import Movie, Series, SeriesEpisode, hash_url
 
 __all__ = ["deduplicate_and_store", "deduplicate_and_store_series"]
 
@@ -91,9 +91,11 @@ def deduplicate_and_store(session: Session, movies: list[dict]) -> dict:
             continue
 
         try:
-            # V-009: Check for existing record with same torrent_url
+            torrent_url_hash = hash_url(movie["torrent_url"])
+
+            # V-009: Check for existing record with same torrent_url (via its hash)
             existing = session.query(Movie).filter(
-                Movie.torrent_url == movie["torrent_url"]
+                Movie.torrent_url_hash == torrent_url_hash
             ).first()
 
             if existing:
@@ -127,6 +129,7 @@ def deduplicate_and_store(session: Session, movies: list[dict]) -> dict:
                 year=movie["year"],
                 genres=json.dumps(movie["genres"]),
                 torrent_url=movie["torrent_url"],
+                torrent_url_hash=torrent_url_hash,
                 qualities=json.dumps(movie["qualities"]),
                 imdb_rating=movie.get("imdb_rating"),
                 poster_url=movie.get("poster_url"),

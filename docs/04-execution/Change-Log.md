@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Fixed — MySQL Rejects Schema on utf8mb4 (Index Key Too Long) (M13)
+- `movies.torrent_url` (`VARCHAR(1000)`) had a `UNIQUE` constraint — under `utf8mb4` that's a 4000-byte index key, over InnoDB's 3072-byte limit, so `CREATE TABLE movies` failed outright on MySQL
+- Same defect found and fixed on two more tables: `news_items` and `design_items` both had `UNIQUE (url VARCHAR(2000), feed_name)` — up to 9020 bytes; these would have failed next since `movies` is created first
+- Fix: new `hash_url()` helper (SHA-256 hex, `src/common/models.py`) plus a `*_hash` `CHAR(64)` column on each of the three tables; the unique constraint moves to the hash (`torrent_url_hash` for `Movie`; `(url_hash, feed_name)` for `NewsItem`/`DesignItem`) instead of the raw URL column — raw URL columns unchanged, unindexed, still used for storage/display/linking
+- `src/cli/dedup.py` and `src/cli/main.py` dedup lookups updated to query by `*_hash` instead of the raw URL column
+- New idempotent migration `tools/migrate_006_url_hash_unique_keys.sh` — adds/backfills the hash columns and (on MySQL) drops the old oversized unique index; verified against the live MySQL dev DB with unchanged row counts and no duplicate inserts on re-ingestion
+- No API/response shape change — `torrent_url`/`url` fields are unaffected
+
 ### Changed — News List Layout + Date Grouping (M12)
 - News item rows (`NewsItemRow`, shared by Unfiltered and Filtered feed views): title now left-aligned, "Mark Read"/"Mark Unread" button right-aligned on the same row; per-item date line removed
 - News items are now grouped under a date header shown once per day ("Today" / "Yesterday" / full date), instead of repeating the date on every row; items with no `published_at` collect into a trailing "Unknown date" group

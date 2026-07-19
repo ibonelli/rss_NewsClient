@@ -47,7 +47,8 @@ class Movie(Base):
     title: str                        # NOT NULL, max 500 chars
     year: int                         # NOT NULL, 4-digit year
     genres: str                       # NOT NULL, JSON array as text e.g. '["Action","Thriller"]'
-    torrent_url: str                  # NOT NULL, UNIQUE — primary dedup key
+    torrent_url: str                  # NOT NULL — not indexed directly (see torrent_url_hash)
+    torrent_url_hash: str             # NOT NULL, UNIQUE, CHAR(64) — SHA-256(torrent_url); primary dedup key
     qualities: str                    # JSON array as text e.g. '[{"quality": "720p", "size": "850 MB"}, {"quality": "1080p", "size": "1.26 GB"}]' — size may be null if not parsed from the description
     imdb_rating: float | None         # 0.0–10.0, nullable (not yet enriched)
     rt_expert_rating: int | None      # 0–100, nullable
@@ -64,7 +65,7 @@ class Movie(Base):
 ```
 
 **Indexes:**
-- `ix_movies_torrent_url` UNIQUE on `torrent_url` — primary dedup key
+- `ux_movies_torrent_url_hash` UNIQUE on `torrent_url_hash` — primary dedup key (see "URL hash unique keys" below)
 - `ix_movies_title_year` on `(title, year)` — secondary dedup lookup
 - `ix_movies_year` on `year` — year-section queries
 - `ix_movies_is_read` on `is_read` — filter out read movies
@@ -157,7 +158,8 @@ class NewsItem(Base):
     id: int                         # PK, auto-increment
     feed_name: str                  # NOT NULL — matches feed name in config
     title: str                      # NOT NULL
-    url: str                        # NOT NULL, UNIQUE per feed — dedup key
+    url: str                        # NOT NULL — not indexed directly (see url_hash)
+    url_hash: str                   # NOT NULL, CHAR(64) — SHA-256(url); unique per feed with feed_name
     published_at: datetime | None   # publication date from feed (nullable if absent)
     full_content: str               # NOT NULL, full article text from feed
     ingested_at: datetime           # auto-set on insert
@@ -166,7 +168,7 @@ class NewsItem(Base):
 ```
 
 **Indexes:**
-- `ix_news_items_url_feed` UNIQUE on `(url, feed_name)` — dedup key
+- `ix_news_items_url_hash_feed` UNIQUE on `(url_hash, feed_name)` — dedup key (see "URL hash unique keys" below)
 - `ix_news_items_feed_name` on `feed_name` — feed-scoped queries
 - `ix_news_items_is_read` on `is_read`
 - `ix_news_items_matched_filter_id` on `matched_filter_id`
@@ -202,7 +204,8 @@ class DesignItem(Base):
     id: int                         # PK, auto-increment
     feed_name: str                  # NOT NULL — matches feed name in config
     title: str                      # NOT NULL
-    url: str                        # NOT NULL — dedup key with feed_name
+    url: str                        # NOT NULL — not indexed directly (see url_hash)
+    url_hash: str                   # NOT NULL, CHAR(64) — SHA-256(url); unique per feed with feed_name
     published_at: datetime | None   # publication date from feed (nullable if absent)
     summary: str                    # NOT NULL, plain text (HTML stripped)
     image_url: str | None           # nullable — extracted best-effort from RSS (FR-063)
@@ -211,7 +214,7 @@ class DesignItem(Base):
 ```
 
 **Indexes:**
-- `ix_design_items_url_feed` UNIQUE on `(url, feed_name)` — dedup key
+- `ix_design_items_url_hash_feed` UNIQUE on `(url_hash, feed_name)` — dedup key (see "URL hash unique keys" below)
 - `ix_design_items_feed_name` on `feed_name` — feed-scoped queries
 - `ix_design_items_is_read` on `is_read`
 
@@ -220,6 +223,21 @@ class DesignItem(Base):
 ### AIFilteredView (legacy — table retained, not used)
 
 The `ai_filtered_views` table remains in the database schema but is no longer written or queried by the application. It is retained to avoid a destructive migration on existing installations.
+
+### URL hash unique keys
+
+`Movie.torrent_url` (`VARCHAR(1000)`), `NewsItem.url` and `DesignItem.url`
+(`VARCHAR(2000)`) are never indexed directly. Under `utf8mb4` (4 bytes/char),
+a unique index on any of them would exceed InnoDB's 3072-byte single-key-part
+limit (`torrent_url`: 4000 bytes; `(url, feed_name)`: up to 9020 bytes) and
+`CREATE TABLE` fails outright on MySQL. Instead, each table stores a
+`*_hash` column — `hash_url()` in `src/common/models.py`, a SHA-256 hex
+digest (`CHAR(64)` = 256 bytes under utf8mb4) — and the unique constraint is
+on the hash (`torrent_url_hash` alone for `Movie`; `(url_hash, feed_name)`
+for `NewsItem`/`DesignItem`, preserving the original per-feed dedup
+semantics). The raw URL column is retained, unindexed, purely for
+storage/display/linking. See `tools/migrate_006_url_hash_unique_keys.sh` for
+the migration on an existing database.
 
 ## 3) Validation Rules
 
@@ -236,7 +254,7 @@ The `ai_filtered_views` table remains in the database schema but is no longer wr
 - **V-008:** `rt_audience_rating`, if present, MUST be between 0 and 100
 
 ### Movie deduplication
-- **V-009:** On insert, check for existing record with same `torrent_url`
+- **V-009:** On insert, check for existing record with same `torrent_url` (via `torrent_url_hash`, see "URL hash unique keys")
 - **V-010:** If match found, merge `qualities` arrays (union of available qualities, keyed by `quality` — matching entries keep their original `size`)
 - **V-011:** If no URL match but same `title` + `year`, treat as same movie — merge qualities
 

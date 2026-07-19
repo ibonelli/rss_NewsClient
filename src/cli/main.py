@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from src.common.config import load_config
 from src.common.db import get_engine, get_session_factory, init_db
-from src.common.models import DesignItem, NewsItem
+from src.common.models import DesignItem, NewsItem, hash_url
 from src.cli.fetcher import fetch_feed, fetch_series_feed, fetch_news_feed, fetch_design_feed
 from src.cli.dedup import deduplicate_and_store, deduplicate_and_store_series
 from src.cli.alerter import update_feed_health, check_and_alert
@@ -46,9 +46,10 @@ def _store_news_items(session: Session, items: list[dict]) -> dict:
             stats["skipped"] += 1
             continue
 
+        url_hash = hash_url(url)
         existing = (
             session.query(NewsItem)
-            .filter(NewsItem.url == url, NewsItem.feed_name == feed_name)
+            .filter(NewsItem.url_hash == url_hash, NewsItem.feed_name == feed_name)
             .first()
         )
         if existing:
@@ -59,6 +60,7 @@ def _store_news_items(session: Session, items: list[dict]) -> dict:
             feed_name=feed_name,
             title=title,
             url=url,
+            url_hash=url_hash,
             published_at=item.get("published_at"),
             full_content=item.get("full_content") or "",
             ingested_at=datetime.utcnow(),
@@ -74,10 +76,12 @@ def _store_news_items(session: Session, items: list[dict]) -> dict:
         # Re-insert one by one to skip real duplicates on race condition
         for item in items:
             try:
+                retry_url = (item.get("url") or "").strip()
                 session.add(NewsItem(
                     feed_name=item.get("feed_name", ""),
                     title=(item.get("title") or "").strip(),
-                    url=(item.get("url") or "").strip(),
+                    url=retry_url,
+                    url_hash=hash_url(retry_url),
                     published_at=item.get("published_at"),
                     full_content=item.get("full_content") or "",
                     ingested_at=datetime.utcnow(),
@@ -103,9 +107,10 @@ def _store_design_items(session: Session, items: list[dict]) -> dict:
             stats["skipped"] += 1
             continue
 
+        url_hash = hash_url(url)
         existing = (
             session.query(DesignItem)
-            .filter(DesignItem.url == url, DesignItem.feed_name == feed_name)
+            .filter(DesignItem.url_hash == url_hash, DesignItem.feed_name == feed_name)
             .first()
         )
         if existing:
@@ -116,6 +121,7 @@ def _store_design_items(session: Session, items: list[dict]) -> dict:
             feed_name=feed_name,
             title=title,
             url=url,
+            url_hash=url_hash,
             published_at=item.get("published_at"),
             summary=item.get("summary") or "",
             image_url=item.get("image_url"),
@@ -130,10 +136,12 @@ def _store_design_items(session: Session, items: list[dict]) -> dict:
         session.rollback()
         for item in items:
             try:
+                retry_url = (item.get("url") or "").strip()
                 session.add(DesignItem(
                     feed_name=item.get("feed_name", ""),
                     title=(item.get("title") or "").strip(),
-                    url=(item.get("url") or "").strip(),
+                    url=retry_url,
+                    url_hash=hash_url(retry_url),
                     published_at=item.get("published_at"),
                     summary=item.get("summary") or "",
                     image_url=item.get("image_url"),

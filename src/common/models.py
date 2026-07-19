@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime
 
 from sqlalchemy import (
@@ -9,7 +10,14 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-__all__ = ["Base", "Movie", "Series", "SeriesEpisode", "FeedHealth", "NewsItem", "Filter", "AIFilteredView", "DesignItem"]
+__all__ = ["Base", "Movie", "Series", "SeriesEpisode", "FeedHealth", "NewsItem", "Filter", "AIFilteredView", "DesignItem", "hash_url"]
+
+
+def hash_url(url: str) -> str:
+    """SHA-256 hex digest of a URL — fixed-length substitute for indexing a
+    long URL column directly (utf8mb4 VARCHAR(1000+) exceeds InnoDB's
+    3072-byte index-key limit)."""
+    return hashlib.sha256(url.encode("utf-8")).hexdigest()
 
 
 class Base(DeclarativeBase):
@@ -28,7 +36,8 @@ class Movie(Base):
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     year: Mapped[int] = mapped_column(Integer, nullable=False)
     genres: Mapped[str] = mapped_column(Text, nullable=False)  # JSON array as text
-    torrent_url: Mapped[str] = mapped_column(String(1000), nullable=False, unique=True)
+    torrent_url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    torrent_url_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)  # SHA-256(torrent_url) — see hash_url()
     qualities: Mapped[str] = mapped_column(Text, nullable=False, default="[]")  # JSON array
     imdb_id: Mapped[str | None] = mapped_column(String(20), nullable=True)
     imdb_rating: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -107,7 +116,7 @@ class NewsItem(Base):
 
     __tablename__ = "news_items"
     __table_args__ = (
-        Index("ix_news_items_url_feed", "url", "feed_name", unique=True),
+        Index("ix_news_items_url_hash_feed", "url_hash", "feed_name", unique=True),
         Index("ix_news_items_feed_name", "feed_name"),
         Index("ix_news_items_is_read", "is_read"),
         Index("ix_news_items_matched_filter_id", "matched_filter_id"),
@@ -117,6 +126,7 @@ class NewsItem(Base):
     feed_name: Mapped[str] = mapped_column(String(255), nullable=False)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     url: Mapped[str] = mapped_column(String(2000), nullable=False)
+    url_hash: Mapped[str] = mapped_column(String(64), nullable=False)  # SHA-256(url) — see hash_url()
     published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     full_content: Mapped[str] = mapped_column(Text, nullable=False, default="")
     ingested_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
@@ -146,7 +156,7 @@ class DesignItem(Base):
 
     __tablename__ = "design_items"
     __table_args__ = (
-        Index("ix_design_items_url_feed", "url", "feed_name", unique=True),
+        Index("ix_design_items_url_hash_feed", "url_hash", "feed_name", unique=True),
         Index("ix_design_items_feed_name", "feed_name"),
         Index("ix_design_items_is_read", "is_read"),
     )
@@ -155,6 +165,7 @@ class DesignItem(Base):
     feed_name: Mapped[str] = mapped_column(String(255), nullable=False)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     url: Mapped[str] = mapped_column(String(2000), nullable=False)
+    url_hash: Mapped[str] = mapped_column(String(64), nullable=False)  # SHA-256(url) — see hash_url()
     published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
     image_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)

@@ -52,21 +52,22 @@ sudo chown -R pelisfeed:pelisfeed /opt/pelis-feed
 `/etc/systemd/system/pelis-feed-web.service`:
 ```ini
 [Unit]
-Description=pelis-feed web UI
+Description=rssfeed web UI
 After=network.target
 
 [Service]
 Type=simple
 User=pelisfeed
 Group=pelisfeed
-WorkingDirectory=/opt/pelis-feed
-ExecStart=/opt/pelis-feed/venv/bin/python src/webui/main.py
+WorkingDirectory=/home/www/rss_NewsClient
+ExecStart=/home/www/rss_NewsClient/venv/bin/python /home/www/rss_NewsClient/src/webui/main.py
 Restart=on-failure
 RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
 ```
+
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now pelis-feed-web

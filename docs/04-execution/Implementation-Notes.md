@@ -365,3 +365,35 @@ The original M12 spacing values were sized for a layout that still had a per-ite
 - `.news-date-header` padding: `0.8rem 0 0.5rem` → `0.5rem 0 0.4rem`; margin-bottom: `0.8rem` → `0.5rem`
 
 No markup, sorting, or grouping logic changes — pure CSS density pass.
+
+---
+
+## M13 — URL Hash Unique Keys (MySQL utf8mb4 Index-Length Fix)
+
+### Scope
+- Bug: MySQL rejected schema creation. `movies.torrent_url` (`VARCHAR(1000)`) had a `UNIQUE` constraint — under `utf8mb4` (4 bytes/char) that's a 4000-byte index key, over InnoDB's 3072-byte single-key-part limit, so `CREATE TABLE movies` failed outright
+- Investigation found the identical defect on two more tables (confirmed with user, fixed together): `news_items` and `design_items` both had `UNIQUE (url VARCHAR(2000), feed_name)` — up to 9020 bytes. `movies` is created first, so it failed before the ingester ever reached those two tables, but they'd hit the same error next
+- Fix: stop indexing the raw URL on all three tables. Added a `hash_url()` helper (SHA-256 hex digest, `CHAR(64)` = 256 bytes under utf8mb4) in `src/common/models.py`; each table gets a `*_hash` column and the unique constraint moves to the hash (`torrent_url_hash` alone for `Movie`; `(url_hash, feed_name)` for `NewsItem`/`DesignItem`, preserving the original per-feed dedup semantics)
+- The raw URL columns (`torrent_url`, `url`) are unchanged in shape/length and remain unindexed — used only for storage/display/linking (movie quality links, article URLs)
+
+### Files to touch
+- `src/common/models.py` — `hash_url()` helper; `Movie.torrent_url_hash`, `NewsItem.url_hash`, `DesignItem.url_hash` columns; index definitions updated (`ux_movies_torrent_url_hash`, `ix_news_items_url_hash_feed`, `ix_design_items_url_hash_feed`)
+- `src/cli/dedup.py` — `deduplicate_and_store`: existing-movie lookup now filters on `Movie.torrent_url_hash` instead of `Movie.torrent_url`; sets `torrent_url_hash=hash_url(...)` on insert
+- `src/cli/main.py` — `_store_news_items`/`_store_design_items`: existing-item lookup now filters on `*.url_hash` instead of `*.url`; sets `url_hash=hash_url(url)` on insert (both the main insert and the per-item `IntegrityError` retry fallback)
+- `tools/migrate_006_url_hash_unique_keys.sh` — new idempotent migration (see below)
+- `docs/03-architecture-data/Data-Contracts.md` — schema blocks, index lists, V-009 updated; new "URL hash unique keys" subsection explaining the pattern
+
+### Key decisions
+- SHA-256 chosen for the hash — MySQL's built-in `SHA2(col, 256)` produces the exact same hex digest as Python's `hashlib.sha256(...).hexdigest()`, so the migration's SQL backfill and the app's `hash_url()` never disagree
+- `CHAR(64)` (hex digest) rather than `BINARY(32)` (raw bytes) — slightly larger but trivially inspectable/debuggable in a DB client, and 256 bytes is nowhere near the 3072-byte limit either way
+- Composite unique key kept as `(hash, feed_name)` for `NewsItem`/`DesignItem`, not hash-alone, to preserve the existing "same URL can exist in two different feeds" semantics
+- On MySQL, the migration drops the old oversized unique index after adding the new one (found dynamically via `information_schema.STATISTICS`, not a hardcoded name) — safe because a table that never successfully finished `CREATE TABLE` (this user's reported failure case) simply has no such index to find, and the step no-ops
+- On SQLite, the old inline unique constraint (if a table already existed there) is left in place rather than rebuilt away — SQLite has no index-key-length limit, so it's harmless, and rebuilding a table to drop an inert constraint isn't worth the risk on a live DB (same reasoning as M9's `keep_as_context` column)
+- No behavior change to any read/write path other than the lookup column — `torrent_url`/`url` are still stored and returned exactly as before
+
+### How to test locally (M13)
+1. Fresh MySQL: run `python src/cli/main.py` — confirm `init_db()`/`create_all()` succeeds (no "index key too long" error) and `movies`/`news_items`/`design_items` are created with the new hash columns/indexes
+2. Existing MySQL/SQLite DB: run `tools/migrate_006_url_hash_unique_keys.sh` — confirm it adds and backfills the three `*_hash` columns, and re-running it is a no-op (idempotent)
+3. Verify row counts are unchanged before/after the migration (no data loss)
+4. Re-run the ingester against already-ingested data — confirm no duplicate rows are created (hash-based lookup finds the existing record)
+5. Confirm the web UI still renders Movies/News/Design and that movie quality links (which use `torrent_url` directly) still work

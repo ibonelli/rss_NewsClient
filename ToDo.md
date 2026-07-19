@@ -1,11 +1,3 @@
-Last change went great, but we still have a lot of padding around each title and between them. We need a more tight design for News. Reduce padding for title lines and transition between titles.
-
-When coding, generate a plan and ask for all permissions at once. And also ask for general tool access, not particular commands.
-
-Ask for general tool access, not particular commands. If necessary, create a plan and ask for all permissions at once.
-
-Do the documentation and code changes at the same time. Ask me if you have questions.
-
 Ready to go live...
 
 ## For later
