@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fixed — MySQL "Data too long" on news_items.full_content (M14)
+- `NewsItem.full_content` was plain SQLAlchemy `Text`, which compiles to MySQL's `TEXT` type — capped at 65,535 bytes; ingestion crashed (`1406, "Data too long for column 'full_content'"`) on a feed article whose raw `<content>` HTML was 115,000+ characters
+- Fix: `full_content` now uses `Text().with_variant(LONGTEXT(), "mysql")` — `LONGTEXT` (4 GiB limit) on MySQL, unchanged plain `TEXT` (already unbounded) on SQLite; no application code changes needed
+- New idempotent migration `tools/migrate_007_full_content_longtext.sh` (MySQL only) — verified against the live MySQL dev DB: altered the column, confirmed idempotent on re-run, and confirmed a >65KB `full_content` insert (reproducing the exact reported failure) now succeeds and round-trips intact
+- Checked every other `Text` column in the schema for the same risk — none share `full_content`'s "arbitrary raw HTML from an external feed" profile, so the fix is scoped there only
+
 ### Fixed — MySQL Rejects Schema on utf8mb4 (Index Key Too Long) (M13)
 - `movies.torrent_url` (`VARCHAR(1000)`) had a `UNIQUE` constraint — under `utf8mb4` that's a 4000-byte index key, over InnoDB's 3072-byte limit, so `CREATE TABLE movies` failed outright on MySQL
 - Same defect found and fixed on two more tables: `news_items` and `design_items` both had `UNIQUE (url VARCHAR(2000), feed_name)` — up to 9020 bytes; these would have failed next since `movies` is created first

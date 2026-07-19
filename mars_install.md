@@ -57,6 +57,25 @@ This is usually the best pattern for URLs, since URLs can be arbitrarily long an
 Then I have to rebuild the DB:
 
 ```
-CREATE DATABASE rssfeeds CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 DROP DATABASE rssfeeds;
+CREATE DATABASE rssfeeds CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+```
+
+Trying to load the webUI:
+
+```
+cd /home/www/rss_NewsClient ; ./venv/bin/python ./src/webui/main.py
+```
+
+Second error/problem:
+
+```
+qlalchemy.exc.DataError: (raised as a result of Query-invoked autoflush; consider using a session.no_autoflush block if this flush is occurring prematurely) 
+(pymysql.err.DataError) (1406, "Data too long for column 'full_content' at row 1") ...
+```
+
+Which is due to:
+
+```
+full_content is defined as a column type too small to hold the actual scraped content — you're inserting 115,000+ characters, which blows past whatever the column's limit is.
 ```

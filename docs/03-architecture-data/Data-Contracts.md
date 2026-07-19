@@ -161,7 +161,7 @@ class NewsItem(Base):
     url: str                        # NOT NULL — not indexed directly (see url_hash)
     url_hash: str                   # NOT NULL, CHAR(64) — SHA-256(url); unique per feed with feed_name
     published_at: datetime | None   # publication date from feed (nullable if absent)
-    full_content: str               # NOT NULL, full article text from feed
+    full_content: str               # NOT NULL, full article text from feed — LONGTEXT on MySQL (TEXT caps at 65,535 bytes; some feeds provide the full article as raw HTML via <content>, which can exceed that), plain TEXT elsewhere (unbounded on SQLite)
     ingested_at: datetime           # auto-set on insert
     is_read: bool                   # default False — used by unfiltered and filtered feeds
     matched_filter_id: int | None   # FK → filters.id, nullable; set by Filter Processor for filtered feeds

@@ -8,6 +8,7 @@ from datetime import datetime
 from sqlalchemy import (
     Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text,
 )
+from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 __all__ = ["Base", "Movie", "Series", "SeriesEpisode", "FeedHealth", "NewsItem", "Filter", "AIFilteredView", "DesignItem", "hash_url"]
@@ -128,7 +129,9 @@ class NewsItem(Base):
     url: Mapped[str] = mapped_column(String(2000), nullable=False)
     url_hash: Mapped[str] = mapped_column(String(64), nullable=False)  # SHA-256(url) — see hash_url()
     published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    full_content: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # MySQL TEXT caps at 65,535 bytes; some feeds provide full raw HTML via
+    # <content>, which can exceed that — LONGTEXT on MySQL, plain (unbounded) TEXT elsewhere
+    full_content: Mapped[str] = mapped_column(Text().with_variant(LONGTEXT(), "mysql"), nullable=False, default="")
     ingested_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     matched_filter_id: Mapped[int | None] = mapped_column(

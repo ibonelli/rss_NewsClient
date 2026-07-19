@@ -397,3 +397,28 @@ No markup, sorting, or grouping logic changes — pure CSS density pass.
 3. Verify row counts are unchanged before/after the migration (no data loss)
 4. Re-run the ingester against already-ingested data — confirm no duplicate rows are created (hash-based lookup finds the existing record)
 5. Confirm the web UI still renders Movies/News/Design and that movie quality links (which use `torrent_url` directly) still work
+
+---
+
+## M14 — full_content LONGTEXT (MySQL Data-Too-Long Fix)
+
+### Scope
+- Bug: ingestion crashed with `pymysql.err.DataError: (1406, "Data too long for column 'full_content'")`. `NewsItem.full_content` was plain SQLAlchemy `Text`, which compiles to MySQL `TEXT` — capped at 65,535 bytes. `full_content` stores the raw `<content>` HTML some feeds provide (not a summary), and the failing article (Visual Capitalist feed) was 115,000+ characters
+- Checked every other `Text` column in `models.py` for the same risk: all are either short by construction (JSON-encoded `qualities`/`genres`, `Filter.pattern`, error messages) or explicitly HTML-stripped summaries populated from RSS `<summary>` (`Movie.plot`, `DesignItem.summary`) rather than a raw full-content dump — none carry the same risk profile, none reported failing. Fix scoped to `full_content` only
+- Fix: `full_content` now uses `Text().with_variant(LONGTEXT(), "mysql")` — SQLAlchemy's per-dialect type override. MySQL gets `LONGTEXT` (4 GiB limit); SQLite (and any other backend) keeps plain `TEXT`, which is already unbounded there
+- No application code changes needed — `Mapped[str]` type is unchanged, so `fetcher.py`, `main.py`, `routes.py`, `app.js` are untouched
+
+### Files to touch
+- `src/common/models.py` — `NewsItem.full_content` column type; new `from sqlalchemy.dialects.mysql import LONGTEXT` import
+- `tools/migrate_007_full_content_longtext.sh` — new idempotent migration (MySQL only; SQLite is a no-op since it has no column-type change to make)
+- `docs/03-architecture-data/Data-Contracts.md` — `full_content` field comment updated
+
+### Key decisions
+- `Text().with_variant(LONGTEXT(), "mysql")` over a raw dialect branch in application code — SQLAlchemy's standard mechanism for "different column type per backend," keeps the model as the single source of truth, no `if mysql: ... else: ...` scattered elsewhere
+- Migration checks the live column's `information_schema.COLUMNS.DATA_TYPE` rather than assuming it needs altering — safe to re-run, and a table that doesn't exist yet (fresh install) is skipped since `create_all()` will create it correctly from the updated model
+- Scoped to `full_content` only, not a blanket TEXT→LONGTEXT pass over every column — the other `Text` columns don't share the "arbitrary raw HTML from an external feed" risk profile that caused this specific failure
+
+### How to test locally (M14)
+1. Run `tools/migrate_007_full_content_longtext.sh` against an existing MySQL DB — confirm it alters `news_items.full_content` to `LONGTEXT`, and re-running it is a no-op (idempotent)
+2. Insert (or re-ingest) a news item with a `full_content` value over 65,535 bytes — confirm it inserts without `DataError` and round-trips at full length
+3. Confirm the web UI News tab still loads existing items after the `ALTER TABLE`
