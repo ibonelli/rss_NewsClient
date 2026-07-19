@@ -346,15 +346,64 @@ function NewsItemRow({ item, isReadView, onRemove }) {
     return html`
         <div className="news-item">
             <div className="news-item-header">
-                <a className="news-item-title" href=${item.url} target="_blank" rel="noreferrer">${item.title}</a>
-                ${item.matched_filter_name && html`<${Badge} className="filter-badge">${item.matched_filter_name}</${Badge}>`}
+                <div className="news-item-title-group">
+                    <a className="news-item-title" href=${item.url} target="_blank" rel="noreferrer">${item.title}</a>
+                    ${item.matched_filter_name && html`<${Badge} className="filter-badge">${item.matched_filter_name}</${Badge}>`}
+                </div>
+                <button className="btn btn-read btn-sm" onClick=${handleClick} disabled=${loading}>
+                    ${loading ? "..." : isReadView ? "Mark Unread" : "Mark Read"}
+                </button>
             </div>
-            ${item.published_at && html`<div className="news-item-date">${new Date(item.published_at).toLocaleString()}</div>`}
-            <button className="btn btn-read btn-sm" onClick=${handleClick} disabled=${loading}>
-                ${loading ? "..." : isReadView ? "Mark Unread" : "Mark Read"}
-            </button>
         </div>
     `;
+}
+
+// ---------------------------------------------------------------------------
+// News date grouping — items arrive sorted by published_at desc; group
+// consecutive same-day items under one header instead of repeating the date
+// per row. Items with no published_at are collected into a trailing group.
+// ---------------------------------------------------------------------------
+
+function newsDateKey(publishedAt) {
+    if (!publishedAt) return null;
+    const d = new Date(publishedAt);
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+function formatNewsDateLabel(publishedAt) {
+    const itemDate = new Date(publishedAt);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+
+    if (newsDateKey(publishedAt) === newsDateKey(today)) return "Today";
+    if (newsDateKey(publishedAt) === newsDateKey(yesterday)) return "Yesterday";
+    return itemDate.toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+}
+
+function groupNewsByDate(items) {
+    const dated = [];
+    const undated = [];
+    for (const item of items) {
+        (item.published_at ? dated : undated).push(item);
+    }
+
+    const groups = [];
+    let currentKey = undefined;
+    for (const item of dated) {
+        const key = newsDateKey(item.published_at);
+        if (key !== currentKey) {
+            groups.push({ label: formatNewsDateLabel(item.published_at), items: [] });
+            currentKey = key;
+        }
+        groups[groups.length - 1].items.push(item);
+    }
+
+    if (undated.length > 0) {
+        groups.push({ label: "Unknown date", items: undated });
+    }
+
+    return groups;
 }
 
 // ---------------------------------------------------------------------------
@@ -413,9 +462,14 @@ function NewsFeedView({ feedName, emptyMessage, RowComponent }) {
                 ? html`<div className="loading">Loading...</div>`
                 : items.length === 0
                     ? html`<div className="empty-state">${isRead ? "No read items." : emptyMessage}</div>`
-                    : html`<div className="news-list">
-                        ${items.map(item => html`<${RowComponent} key=${item.id} item=${item} isReadView=${isRead} onRemove=${handleRemove} />`)}
-                    </div>`
+                    : groupNewsByDate(items).map(group => html`
+                        <div key=${group.label} className="news-date-section">
+                            <h3 className="news-date-header">${group.label}</h3>
+                            <div className="news-list">
+                                ${group.items.map(item => html`<${RowComponent} key=${item.id} item=${item} isReadView=${isRead} onRemove=${handleRemove} />`)}
+                            </div>
+                        </div>
+                    `)
             }
         </div>
     `;

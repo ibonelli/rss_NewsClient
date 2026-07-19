@@ -1,3 +1,11 @@
+I want a change in the news view looks. The title needs to be aligned to the left, and the "Mark read" button should go to the right. Also, do not show the date. Instead, group news by date and show the date only once. Also sort the news by date & time.
+
+When coding, generate a plan and ask for all permissions at once. And also ask for general tool access, not particular commands.
+
+Ask for general tool access, not particular commands. If necessary, create a plan and ask for all permissions at once.
+
+Do the documentation and code changes at the same time. Ask me if you have questions.
+
 Ready to go live...
 
 ## For later

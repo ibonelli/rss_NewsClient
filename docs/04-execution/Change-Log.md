@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Changed — News List Layout + Date Grouping (M12)
+- News item rows (`NewsItemRow`, shared by Unfiltered and Filtered feed views): title now left-aligned, "Mark Read"/"Mark Unread" button right-aligned on the same row; per-item date line removed
+- News items are now grouped under a date header shown once per day ("Today" / "Yesterday" / full date), instead of repeating the date on every row; items with no `published_at` collect into a trailing "Unknown date" group
+- Sorting unchanged — `GET /api/news/{feed}/items` already returns items ordered by `published_at desc`; grouping is a client-side render transform, no API/schema change
+- `styles.css`: `.news-item-header` gains `justify-content: space-between`; new `.news-item-title-group`, `.news-date-section`, `.news-date-header`; unused `.news-item-date` removed
+- Design tab unaffected (separate component/markup)
+
 ### Changed — Series Only-Title/Full Becomes Per-Series Collapse
 - Series tab (`app.js`): the season/episode/quality tree is now collapsible per series row instead of only all-at-once — new `collapsedOverrides` state (a `Set` of series IDs) flips the base Only-Title/Full setting for individual rows; `isCollapsed(seriesId)` derives the effective render state
 - Each series row shows a disclosure chevron (▸ collapsed / ▾ expanded, no icon library used); the entire title row is clickable to toggle that one series — the IMDb link and Follow/Unfollow/Ignore/Unignore buttons `stopPropagation()` so they don't also trigger the toggle

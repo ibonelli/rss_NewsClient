@@ -329,3 +329,30 @@ python src/cli/main.py  # repopulate from live feed
 7. Click "Export Unread" — confirm JSON contains only unread items (no `context_items` key)
 8. Confirm no Import button appears anywhere in the News tab
 9. For AI-filtered feed: confirm no "Show Raw Items" button and no Keep as Context button appear
+
+---
+
+## M12 — News List Layout + Date Grouping
+
+### Scope
+- `NewsItemRow` (shared by `UnfilteredFeedView` and `FilteredFeedView`): title now left-aligned and the "Mark Read"/"Mark Unread" button right-aligned on the same header row (`justify-content: space-between`); the per-item published-date line is removed
+- `NewsFeedView` groups the (already server-sorted) item list by calendar day and renders one date header per group instead of a date on every row
+- Date header labels: "Today" / "Yesterday" for the two most recent days, otherwise full `Weekday, Month D, YYYY`; items with no `published_at` are collected into a single trailing "Unknown date" group
+- No change to sorting — `GET /api/news/{feed}/items` already returns `ORDER BY published_at DESC`; grouping is a render-time transform of the existing response
+- Design tab (`DesignFeedView`) uses separate markup and is unaffected
+
+### Files to touch
+- `src/webui/static/app.js` — `NewsItemRow` markup restructured; new `newsDateKey`, `formatNewsDateLabel`, `groupNewsByDate` helpers; `NewsFeedView` render loop iterates date groups instead of a flat item list
+- `src/webui/static/styles.css` — `.news-item-header` gains `justify-content: space-between`; new `.news-item-title-group` wraps title + filter badge; `.news-item-date` removed (no longer used); new `.news-date-section` / `.news-date-header` (sticky day header, same pattern as `.year-header`)
+
+### Key decisions
+- Grouping done client-side rather than via a new API shape — the API already returns items sorted by `published_at desc`, so a single pass over the response is sufficient and avoids an API contract change
+- Undated items are pulled out of the normal day-boundary pass and always rendered as one trailing group, since NULL ordering position from the DB isn't guaranteed to be scattered predictably
+- No DB/API/schema changes
+
+### How to test locally (M12)
+1. Open News tab → a feed with items spanning multiple days (Unfiltered or Filtered view)
+2. Confirm each row shows the title on the left and Mark Read/Unread button on the right, on one line, with no per-row date text
+3. Confirm items are grouped under date headers ("Today" / "Yesterday" / full date), each header shown once, items sorted descending by date/time within and across groups
+4. Toggle to Read view — confirm the same grouping applies and "Mark Unread" still removes the row from the current view
+5. If the feed has items with no `published_at`, confirm they appear together in one trailing "Unknown date" group
