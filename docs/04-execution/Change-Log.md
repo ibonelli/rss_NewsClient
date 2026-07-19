@@ -8,6 +8,7 @@
 - Sorting unchanged — `GET /api/news/{feed}/items` already returns items ordered by `published_at desc`; grouping is a client-side render transform, no API/schema change
 - `styles.css`: `.news-item-header` gains `justify-content: space-between`; new `.news-item-title-group`, `.news-date-section`, `.news-date-header`; unused `.news-item-date` removed
 - Design tab unaffected (separate component/markup)
+- Follow-up density pass: tightened `.news-item` padding, `.news-list` gap, and `.news-date-section`/`.news-date-header` spacing — the original values were sized for a layout that still had the per-item date line, and read as too loose once it was removed
 
 ### Changed — Series Only-Title/Full Becomes Per-Series Collapse
 - Series tab (`app.js`): the season/episode/quality tree is now collapsible per series row instead of only all-at-once — new `collapsedOverrides` state (a `Set` of series IDs) flips the base Only-Title/Full setting for individual rows; `isCollapsed(seriesId)` derives the effective render state

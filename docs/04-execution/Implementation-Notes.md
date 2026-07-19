@@ -356,3 +356,12 @@ python src/cli/main.py  # repopulate from live feed
 3. Confirm items are grouped under date headers ("Today" / "Yesterday" / full date), each header shown once, items sorted descending by date/time within and across groups
 4. Toggle to Read view — confirm the same grouping applies and "Mark Unread" still removes the row from the current view
 5. If the feed has items with no `published_at`, confirm they appear together in one trailing "Unknown date" group
+
+### Follow-up — Tighter Spacing
+The original M12 spacing values were sized for a layout that still had a per-item date line; once that line was removed, the remaining padding/gap read as too loose. `src/webui/static/styles.css` values tightened (markup unchanged):
+- `.news-item` padding: `1rem` → `0.6rem 1rem` (vertical only, horizontal unchanged)
+- `.news-list` gap: `0.8rem` → `0.4rem`
+- `.news-date-section` margin-bottom: `1.5rem` → `1rem`
+- `.news-date-header` padding: `0.8rem 0 0.5rem` → `0.5rem 0 0.4rem`; margin-bottom: `0.8rem` → `0.5rem`
+
+No markup, sorting, or grouping logic changes — pure CSS density pass.

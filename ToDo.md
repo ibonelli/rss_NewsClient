@@ -1,4 +1,4 @@
-I want a change in the news view looks. The title needs to be aligned to the left, and the "Mark read" button should go to the right. Also, do not show the date. Instead, group news by date and show the date only once. Also sort the news by date & time.
+Last change went great, but we still have a lot of padding around each title and between them. We need a more tight design for News. Reduce padding for title lines and transition between titles.
 
 When coding, generate a plan and ask for all permissions at once. And also ask for general tool access, not particular commands.
 
