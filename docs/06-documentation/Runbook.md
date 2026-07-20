@@ -19,14 +19,14 @@
 
 ## Deployment — Apache reverse proxy on a subdomain, password-protected
 
-Deploys the web UI behind Apache on its own subdomain with HTTP Basic Auth and Let's Encrypt TLS. Target stack: Debian/Ubuntu + Apache2. Placeholders to replace: `pelis.example.com` (subdomain), `SERVER_IP` (server's public IP), `/opt/pelis-feed` (install path).
+Deploys the web UI behind Apache on its own subdomain with HTTP Basic Auth and Let's Encrypt TLS. Target stack: Debian/Ubuntu + Apache2. Placeholders to replace: `news.nachodigital.com.ar` (subdomain), `SERVER_IP` (server's public IP), `/opt/pelis-feed` (install path).
 
 ### 1. DNS
 Add an A record (and AAAA if the server has IPv6) at your DNS provider:
 ```
 pelis   A    SERVER_IP        TTL 300
 ```
-Wait for propagation (`dig pelis.example.com`) before continuing — the Let's Encrypt HTTP challenge in step 7 needs it resolvable.
+Wait for propagation (`dig news.nachodigital.com.ar`) before continuing — the Let's Encrypt HTTP challenge in step 7 needs it resolvable.
 
 ### 2. Deploy the app
 ```bash
@@ -57,8 +57,8 @@ After=network.target
 
 [Service]
 Type=simple
-User=pelisfeed
-Group=pelisfeed
+User=<linux-user-to-run>
+Group=<linux-group-to-run>
 WorkingDirectory=/home/www/rss_NewsClient
 ExecStart=/home/www/rss_NewsClient/venv/bin/python /home/www/rss_NewsClient/src/webui/main.py
 Restart=on-failure
@@ -89,15 +89,15 @@ sudo systemctl restart apache2
 ### 5. Create the password file (Basic Auth)
 ```bash
 sudo apt install apache2-utils   # provides htpasswd, if not already present
-sudo htpasswd -c /etc/apache2/.htpasswd-pelis youruser
+sudo htpasswd -c /etc/apache2/.htpasswd-pelis <youruser>
 # -c only on first user; drop -c and rerun to add more users later
 ```
 
 ### 6. HTTP vhost (port 80) — needed first so certbot's ACME challenge can pass
-`/etc/apache2/sites-available/pelis.example.com.conf`:
+`/etc/apache2/sites-available/news-nachodigital.conf`:
 ```apache
 <VirtualHost *:80>
-    ServerName pelis.example.com
+    ServerName news.nachodigital.com.ar
 
     ProxyPreserveHost On
     ProxyPass / http://127.0.0.1:8080/
@@ -114,19 +114,20 @@ sudo htpasswd -c /etc/apache2/.htpasswd-pelis youruser
     CustomLog ${APACHE_LOG_DIR}/pelis-access.log combined
 </VirtualHost>
 ```
+
 ```bash
-sudo a2ensite pelis.example.com.conf
+sudo a2ensite news-nachodigital.conf
 sudo apache2ctl configtest
 sudo systemctl reload apache2
 ```
-Verify `http://pelis.example.com` prompts for Basic Auth and proxies to the app before moving to TLS.
+Verify `http://news.nachodigital.com.ar` prompts for Basic Auth and proxies to the app before moving to TLS.
 
 ### 7. TLS via Let's Encrypt
 ```bash
 sudo apt install certbot python3-certbot-apache
-sudo certbot --apache -d pelis.example.com
+sudo certbot --apache -d news.nachodigital.com.ar
 ```
-Certbot adds a `:443` block with the cert and (if accepted) a redirect from `:80` to `:443`, while preserving the `<Location>` Basic Auth block. Confirm the resulting `pelis.example.com-le-ssl.conf` still has the `AuthType Basic` block inside the `:443` vhost.
+Certbot adds a `:443` block with the cert and (if accepted) a redirect from `:80` to `:443`, while preserving the `<Location>` Basic Auth block. Confirm the resulting `news-nachodigital-le-ssl.conf` still has the `AuthType Basic` block inside the `:443` vhost.
 
 Certbot's renewal timer is installed automatically:
 ```bash
@@ -142,13 +143,13 @@ sudo ufw allow 443/tcp
 Do not open 8080 externally — it's only reachable via `127.0.0.1` (already enforced by `webapp.host` in step 2).
 
 ### 9. Verify end-to-end
-- `curl -I https://pelis.example.com` → expect `401` without credentials.
-- `curl -I -u youruser:pass https://pelis.example.com` → expect `200`.
+- `curl -I https://news.nachodigital.com.ar` → expect `401` without credentials.
+- `curl -I -u youruser:pass https://news.nachodigital.com.ar` → expect `200`.
 - Browser: `/movies`, `/series`, `/news` load and client-side routing works (all served by `routes.py:serve_spa_route` returning the same `index.html`; Apache just proxies every path through).
 - `/api/movies`, `/api/health` respond under the new origin.
 - `sudo journalctl -u pelis-feed-web -f` while testing, to catch backend errors.
 
-Note: `src/webui/app.py` hardcodes CORS `allow_origins` to `http://127.0.0.1:8080`/`http://localhost:8080`. Not an issue here since the browser only ever talks to `https://pelis.example.com` (same-origin through the proxy) — only relevant if something needs to call the API cross-origin from a different domain.
+Note: `src/webui/app.py` hardcodes CORS `allow_origins` to `http://127.0.0.1:8080`/`http://localhost:8080`. Not an issue here since the browser only ever talks to `https://news.nachodigital.com.ar` (same-origin through the proxy) — only relevant if something needs to call the API cross-origin from a different domain.
 
 ## Common tasks
 
