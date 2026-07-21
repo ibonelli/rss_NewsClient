@@ -422,3 +422,32 @@ No markup, sorting, or grouping logic changes — pure CSS density pass.
 1. Run `tools/migrate_007_full_content_longtext.sh` against an existing MySQL DB — confirm it alters `news_items.full_content` to `LONGTEXT`, and re-running it is a no-op (idempotent)
 2. Insert (or re-ingest) a news item with a `full_content` value over 65,535 bytes — confirm it inserts without `DataError` and round-trips at full length
 3. Confirm the web UI News tab still loads existing items after the `ALTER TABLE`
+
+---
+
+## M15 — News Feed Tag-Grouping (ADR-016)
+
+### Scope
+- Feature request: group `news_feeds` into tabs by a new `tag` config field, since the flat feed-picker row doesn't scale as feeds are added
+- Fully specified during the docs pass before any code was written: FR-090–FR-094, AC-039–AC-043, Data-Contracts.md's `GET /api/news` contract, and ADR-016 (which also records the deliberate URL-scheme break, see below)
+- Config-only feature — no DB schema change, no CLI/ingester change. `tag` is read from `config.yaml` at request time by the web UI only, the same treatment as the existing `type`/`filters` fields
+
+### Files touched
+- `config.yaml` / `config.yaml.example` — new `news_tag_priority` ordered list; `tag:` added to every `news_feeds` entry (first-draft categorization — trivially hand-editable, not meant to be a firm taxonomy)
+- `src/webui/routes.py` — `get_news_feeds()` now defaults missing `tag` to `"General"` and pre-sorts the returned `feeds` array by tag-priority order before returning it; `serve_spa_route` decorators extended with `/news/{tag}` and `/news/{tag}/{feed_name}`, replacing the old `/news/{feed_name}`
+- `src/webui/static/app.js` — `parseLocation()` branches on `tab === "news"` to parse a 3-segment path (`{tag}/{feed_name}`) instead of the generic 2-segment form still used by Design; `App()` passes `initialTag` through to `NewsTab`; `NewsTab` restructured into two levels (tag-tab row + the existing per-feed row, now scoped to the active tag)
+- `src/webui/static/styles.css` — new `.news-tag-nav`/`.tag-nav-btn` rules; `.news-feed-nav` top padding trimmed now that it sits below the tag row
+
+### Key decisions
+- Tag-priority sorting is done **once, server-side**, in `get_news_feeds()` — mirrors the existing `sort_by_genre_priority` pattern in `src/webui/filters.py` (priority list → `{value: index}` map, unlisted values appended via an incrementing counter, Python's stable `sort()` preserves original relative order for ties). The client only needs to group the already-ordered array by `tag`; it never sees `news_tag_priority` itself, so there's no second endpoint or extra config exposed to the frontend
+- The "old link falls back to default" requirement (FR-094/AC-042) needed no special-case code: `NewsTab`'s initial-load resolution logic already validates `activeTag`/`activeFeed` against the fetched feed list and falls back to the first tag/first feed if either doesn't match. An old-style `/news/{feed_name}` link parses (`parseLocation`) as `tag = feed_name`, which — being some arbitrary feed name, not a real tag — simply fails that validation and falls through to the same default-selection path used on a bare `/news` visit
+- `serve_spa_route` accepts both `tag` and `feed_name` as optional params across all its decorators (some routes only supply one or neither) — consistent with the pre-existing "accepted but unused server-side" comment, since the SPA shell is identical regardless of path
+
+### How to test locally (M15)
+1. `GET /api/news` — confirm each feed dict includes `tag` and the array is grouped/ordered per `news_tag_priority` (tags not in that list appended after, in first-appearance order)
+2. Load `/news` — confirm it lands on the first tag tab and that tag's first feed, matching the auto-select behavior that existed pre-feature for the single-feed-row case
+3. Click through tag tabs — confirm the feed row below updates to that tag's feeds only, the first feed auto-selects, and the URL updates to `/news/{tag}/{feed}` without a page reload
+4. Visit `/news/{tag}` directly — confirms that tag's first feed loads
+5. Visit an old-style `/news/{feed_name}` link — confirms it falls back to the default tag/feed instead of erroring or 404ing
+6. Browser back/forward across tag and feed changes — confirms `popstate` restores the right tag+feed combination
+7. Confirm Design tab is unaffected — still a flat feed picker, `/design/{feed_name}` unchanged

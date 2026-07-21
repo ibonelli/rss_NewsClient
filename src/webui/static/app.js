@@ -3,7 +3,8 @@ const html = htm.bind(React.createElement);
 
 // ---------------------------------------------------------------------------
 // Client-side router — one URL per feed type (/movies, /series, /news,
-// /news/{feed_name}, /design, /design/{feed_name}) using the History API.
+// /news/{tag}, /news/{tag}/{feed_name}, /design, /design/{feed_name}) using
+// the History API. News is tag-scoped (ADR-016); Design stays a flat feed_name.
 // ---------------------------------------------------------------------------
 
 const TABS = ["movies", "series", "news", "design"];
@@ -11,8 +12,13 @@ const TABS = ["movies", "series", "news", "design"];
 function parseLocation() {
     const parts = window.location.pathname.split("/").filter(Boolean);
     const tab = TABS.includes(parts[0]) ? parts[0] : "movies";
+    if (tab === "news") {
+        const tag = parts.length > 1 ? decodeURIComponent(parts[1]) : null;
+        const feedName = parts.length > 2 ? decodeURIComponent(parts[2]) : null;
+        return { tab, tag, feedName };
+    }
     const feedName = parts.length > 1 ? decodeURIComponent(parts[1]) : null;
-    return { tab, feedName };
+    return { tab, feedName, tag: null };
 }
 
 function navigate(path) {
@@ -488,9 +494,10 @@ function FilteredFeedView({ feedName }) {
 // News tab — feed list + active feed view
 // ---------------------------------------------------------------------------
 
-function NewsTab({ initialFeedName }) {
+function NewsTab({ initialTag, initialFeedName }) {
     const [feeds, setFeeds] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [activeTag, setActiveTag] = useState(initialTag || null);
     const [activeFeed, setActiveFeed] = useState(initialFeedName || null);
 
     useEffect(() => {
@@ -499,19 +506,36 @@ function NewsTab({ initialFeedName }) {
             .then(data => {
                 const feedList = data.feeds || [];
                 setFeeds(feedList);
-                if (feedList.length > 0 && !activeFeed) {
-                    const fallback = feedList[0].name;
-                    setActiveFeed(fallback);
-                    replaceLocation(`/news/${encodeURIComponent(fallback)}`);
+                if (feedList.length > 0) {
+                    // Feeds arrive pre-sorted by tag priority (FR-091); this also
+                    // resolves an old-style /news/{feed_name} link (parsed as an
+                    // unrecognized tag) or any other stale/missing tag/feed down
+                    // to the News tab's own default — no redirect needed (FR-094).
+                    const tagsInOrder = [...new Set(feedList.map(f => f.tag))];
+                    let tag = tagsInOrder.includes(activeTag) ? activeTag : tagsInOrder[0];
+                    const feedsForTag = feedList.filter(f => f.tag === tag);
+                    let feed = feedsForTag.some(f => f.name === activeFeed) ? activeFeed : feedsForTag[0].name;
+
+                    setActiveTag(tag);
+                    setActiveFeed(feed);
+                    replaceLocation(`/news/${encodeURIComponent(tag)}/${encodeURIComponent(feed)}`);
                 }
                 setLoading(false);
             })
             .catch(() => setLoading(false));
     }, []);
 
+    const handleSelectTag = (tag) => {
+        const feedsForTag = feeds.filter(f => f.tag === tag);
+        const feed = feedsForTag[0].name;
+        setActiveTag(tag);
+        setActiveFeed(feed);
+        navigate(`/news/${encodeURIComponent(tag)}/${encodeURIComponent(feed)}`);
+    };
+
     const handleSelectFeed = (feedName) => {
         setActiveFeed(feedName);
-        navigate(`/news/${encodeURIComponent(feedName)}`);
+        navigate(`/news/${encodeURIComponent(activeTag)}/${encodeURIComponent(feedName)}`);
     };
 
     if (loading) return html`<div className="loading">Loading news feeds...</div>`;
@@ -521,12 +545,28 @@ function NewsTab({ initialFeedName }) {
         </div>
     `;
 
+    const tagsInOrder = [...new Set(feeds.map(f => f.tag))];
+    const unreadByTag = {};
+    feeds.forEach(f => { unreadByTag[f.tag] = (unreadByTag[f.tag] || 0) + f.unread_count; });
+    const feedsForActiveTag = feeds.filter(f => f.tag === activeTag);
     const currentFeed = feeds.find(f => f.name === activeFeed);
 
     return html`
         <div className="news-tab">
+            <div className="news-tag-nav">
+                ${tagsInOrder.map(tag => html`
+                    <button
+                        key=${tag}
+                        className=${`tag-nav-btn ${activeTag === tag ? "active" : ""}`}
+                        onClick=${() => handleSelectTag(tag)}
+                    >
+                        ${tag}
+                        ${unreadByTag[tag] > 0 && html`<span className="unread-badge">${unreadByTag[tag]}</span>`}
+                    </button>
+                `)}
+            </div>
             <div className="news-feed-nav">
-                ${feeds.map(feed => html`
+                ${feedsForActiveTag.map(feed => html`
                     <button
                         key=${feed.name}
                         className=${`feed-nav-btn ${activeFeed === feed.name ? "active" : ""}`}
@@ -950,7 +990,7 @@ function DesignTab({ initialFeedName }) {
 
 function App() {
     const location = useLocation();
-    const { tab: activeTab, feedName } = location;
+    const { tab: activeTab, feedName, tag } = location;
 
     const handleTabClick = (tab) => navigate(`/${tab}`);
 
@@ -989,7 +1029,7 @@ function App() {
             <main className="tab-content">
                 ${activeTab === "movies" && html`<${MoviesTab} />`}
                 ${activeTab === "series" && html`<${SeriesTab} />`}
-                ${activeTab === "news" && html`<${NewsTab} key=${feedName} initialFeedName=${feedName} />`}
+                ${activeTab === "news" && html`<${NewsTab} key=${`${tag || ""}-${feedName || ""}`} initialTag=${tag} initialFeedName=${feedName} />`}
                 ${activeTab === "design" && html`<${DesignTab} key=${feedName} initialFeedName=${feedName} />`}
             </main>
         </div>

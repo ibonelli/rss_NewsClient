@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Added — M15: News Feed Tag-Grouping (ADR-016)
+- Each `news_feeds` config entry gains an optional `tag` field (defaults to `"General"` if unset); a new `news_tag_priority` config list (mirrors the existing `genre_priority`) orders tag tabs left-to-right, with any tag not listed there appended after, in first-appearance order
+- `GET /api/news` (`routes.py:get_news_feeds`) now returns each feed's `tag` and pre-sorts the whole array into tag-priority order — the client groups this already-ordered array by `tag` rather than re-deriving order itself
+- News tab (`app.js:NewsTab`) becomes a two-level picker: a new tag-tab row above the existing per-feed picker (now scoped to the active tag's feeds); selecting a tag auto-selects its first feed; each tag tab shows an aggregate unread badge (sum of its feeds')
+- News deep-link route extended from `/news/{feed_name}` to `/news/{tag}` and `/news/{tag}/{feed_name}` (`routes.py:serve_spa_route`, `app.js:parseLocation`); the old two-segment form is retired with no redirect — an old-style link (or any unrecognized tag/feed combination) falls back to the News tab's own default (first tag, first feed) via the same validate-and-fallback logic used for initial load, requiring no special-casing
+- `design_feeds` / `/design/{feed_name}` unaffected — this change is News-only
+- `styles.css`: new `.news-tag-nav`/`.tag-nav-btn` rules (visually a step more prominent than `.feed-nav-btn`, closer to the top-level `.tab-btn`); `.news-feed-nav` top padding reduced now that it sits below the new tag row
+- No DB schema change and no CLI/ingester change — `tag` is config-only metadata read at request time, same treatment as the existing `type`/`filters` fields
+- See FR-090–FR-094, AC-039–AC-043
+
 ### Fixed — MySQL "Data too long" on news_items.full_content (M14)
 - `NewsItem.full_content` was plain SQLAlchemy `Text`, which compiles to MySQL's `TEXT` type — capped at 65,535 bytes; ingestion crashed (`1406, "Data too long for column 'full_content'"`) on a feed article whose raw `<content>` HTML was 115,000+ characters
 - Fix: `full_content` now uses `Text().with_variant(LONGTEXT(), "mysql")` — `LONGTEXT` (4 GiB limit) on MySQL, unchanged plain `TEXT` (already unbounded) on SQLite; no application code changes needed

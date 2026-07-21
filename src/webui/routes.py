@@ -83,13 +83,16 @@ async def serve_index():
 # Bookmarkable/shareable per-feed-type URLs. The SPA reads the path client-side
 # (see parseLocation() in app.js) to pick the active tab and, for news/design,
 # the active sub-feed — the server just needs to return the same shell for all of them.
+# News is tag-scoped (ADR-016): /news/{tag} and /news/{tag}/{feed_name}. Design is
+# unchanged: /design/{feed_name}. `tag`/`feed_name` are accepted but unused server-side.
 @router.get("/movies")
 @router.get("/series")
 @router.get("/news")
-@router.get("/news/{feed_name}")
+@router.get("/news/{tag}")
+@router.get("/news/{tag}/{feed_name}")
 @router.get("/design")
 @router.get("/design/{feed_name}")
-async def serve_spa_route(feed_name: str | None = None):
+async def serve_spa_route(tag: str | None = None, feed_name: str | None = None):
     return FileResponse(str(_INDEX_HTML))
 
 
@@ -453,12 +456,18 @@ async def get_news_feeds(
     session: Session = Depends(_get_session),
     config: dict = Depends(_get_config),
 ):
-    """List all configured news feeds with type and unread counts."""
+    """List all configured news feeds with type, tag, and unread counts.
+
+    Feeds are returned pre-sorted into tag-priority order (news_tag_priority,
+    FR-091) so the client can group this array by `tag` without needing the
+    raw priority list itself.
+    """
     news_feeds = config.get("news_feeds", [])
     result = []
     for feed_cfg in news_feeds:
         feed_name = feed_cfg.get("name", "")
         feed_type = feed_cfg.get("type", "unfiltered")
+        feed_tag = feed_cfg.get("tag") or "General"
         if not feed_name:
             continue
 
@@ -479,7 +488,15 @@ async def get_news_feeds(
                 .count()
             )
 
-        result.append({"name": feed_name, "type": feed_type, "unread_count": unread})
+        result.append({"name": feed_name, "type": feed_type, "tag": feed_tag, "unread_count": unread})
+
+    tag_order = {tag: i for i, tag in enumerate(config.get("news_tag_priority", []))}
+    next_index = len(tag_order)
+    for feed in result:
+        if feed["tag"] not in tag_order:
+            tag_order[feed["tag"]] = next_index
+            next_index += 1
+    result.sort(key=lambda feed: tag_order[feed["tag"]])
 
     return {"feeds": result}
 

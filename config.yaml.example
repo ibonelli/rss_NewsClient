@@ -74,78 +74,107 @@ webapp:
 
 # News feeds — remove this section if you don't need news ingestion.
 # Each feed has a type: unfiltered | filtered
+# Each feed also has an optional tag — groups feeds into tabs in the News UI
+# (defaults to "General" if omitted). Order tabs left-to-right via news_tag_priority
+# below; any tag used here but not listed there still gets a tab, appended after.
+news_tag_priority:
+  - tech
+  - world
+  - science
+  - data
+  - security
+  - misc
+
 news_feeds:
   - name: "Tech News"
     url: "https://www.scmp.com/rss/320663/feed"
     type: unfiltered
+    tag: tech
 
   - name: "International News El Mundo"
     url: "https://e00-elmundo.uecdn.es/elmundo/rss/internacional.xml"
     type: unfiltered
+    tag: world
 
   - name: "International News El Pais"
     url: "https://feeds.elpais.com/mrss-s/pages/ep/site/elpais.com/section/internacional/portada"
     type: unfiltered
+    tag: world
 
   - name: "Torrent Freak"
     url: "http://feeds.feedburner.com/Torrentfreak"
     type: unfiltered
+    tag: tech
 
   - name: "Visual Capitalist"
     url: "https://feeds.feedburner.com/visualcapitalist"
     type: unfiltered
+    tag: data
 
   - name: "IEEE Spectrum"
     url: "https://spectrum.ieee.org/feeds/feed.rss"
     type: unfiltered
+    tag: tech
 
   - name: "Eureka"
     url: "http://feeds.feedburner.com/naukas/danielmarin?format=xml"
     type: unfiltered
+    tag: science
 
   - name: "Linux Gizmos"
     url: "http://linuxgizmos.com/feed/"
     type: unfiltered
+    tag: tech
 
   - name: "IEEE Spectrum Robotics"
     url: "http://feeds.feedburner.com/IeeeSpectrumRobotics"
     type: unfiltered
+    tag: tech
 
   - name: "The Conversation"
     url: "https://theconversation.com/us/articles.atom"
     type: unfiltered
+    tag: world
 
   - name: "South China Morning Post"
     url: "https://www.scmp.com/rss/320663/feed"
     type: unfiltered
+    tag: world
 
   - name: "Our World in Data"
     url: "https://ourworldindata.org/feed"
     type: unfiltered
+    tag: data
 
   - name: "Web3 is going great"
     url: "https://web3isgoinggreat.com/feed.xml"
     type: unfiltered
+    tag: tech
 
   - name: "Bitcoin Magazine"
     url: "https://bitcoinmagazine.com/.rss/full/"
     type: unfiltered
+    tag: tech
 
   - name: "Beto Valdez"
     url: "http://betovaldez.com.ar/feed/"
     type: unfiltered
+    tag: misc
 
   - name: "Linode Blog"
     url: "https://blog.linode.com/feed/"
     type: unfiltered
+    tag: tech
 
   - name: "Debian News"
     url: "http://www.debian.org/News/news"
     type: unfiltered
+    tag: tech
 
   - name: "Security"
     url: "https://example.com/security/feed"
     type: filtered
+    tag: security
     filters:
       - name: "vulnerabilities"
         pattern: "(CVE|vulnerability|exploit|breach)"
