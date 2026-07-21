@@ -79,12 +79,12 @@ news_feeds:
     url: "https://www.scmp.com/rss/320663/feed"
     type: unfiltered
 
-  - name: "Internacional News El Mundo"
+  - name: "International News El Mundo"
     url: "https://e00-elmundo.uecdn.es/elmundo/rss/internacional.xml"
     type: unfiltered
 
-  - name: "Internacional News El Pais"
-    url: "http://ep00.epimg.net/rss/internacional/portada.xml"
+  - name: "International News El Pais"
+    url: "https://feeds.elpais.com/mrss-s/pages/ep/site/elpais.com/section/internacional/portada"
     type: unfiltered
 
   - name: "Torrent Freak"
@@ -97,6 +97,50 @@ news_feeds:
 
   - name: "IEEE Spectrum"
     url: "https://spectrum.ieee.org/feeds/feed.rss"
+    type: unfiltered
+
+  - name: "Eureka"
+    url: "http://feeds.feedburner.com/naukas/danielmarin?format=xml"
+    type: unfiltered
+
+  - name: "Linux Gizmos"
+    url: "http://linuxgizmos.com/feed/"
+    type: unfiltered
+
+  - name: "IEEE Spectrum Robotics"
+    url: "http://feeds.feedburner.com/IeeeSpectrumRobotics"
+    type: unfiltered
+
+  - name: "The Conversation"
+    url: "https://theconversation.com/us/articles.atom"
+    type: unfiltered
+
+  - name: "South China Morning Post"
+    url: "https://www.scmp.com/rss/320663/feed"
+    type: unfiltered
+
+  - name: "Our World in Data"
+    url: "https://ourworldindata.org/feed"
+    type: unfiltered
+
+  - name: "Web3 is going great"
+    url: "https://web3isgoinggreat.com/feed.xml"
+    type: unfiltered
+
+  - name: "Bitcoin Magazine"
+    url: "https://bitcoinmagazine.com/.rss/full/"
+    type: unfiltered
+
+  - name: "Beto Valdez"
+    url: "http://betovaldez.com.ar/feed/"
+    type: unfiltered
+
+  - name: "Linode Blog"
+    url: "https://blog.linode.com/feed/"
+    type: unfiltered
+
+  - name: "Debian News"
+    url: "http://www.debian.org/News/news"
     type: unfiltered
 
   - name: "Security"
