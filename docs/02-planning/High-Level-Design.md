@@ -210,14 +210,20 @@ genre_priority:
   - comedy
   - documentary
 
+news_tag_priority:
+  - tech
+  - security
+
 news_feeds:
   - name: "Tech News"
     url: "https://example.com/tech/feed"
     type: unfiltered
+    tag: tech
 
   - name: "Security"
     url: "https://example.com/security/feed"
     type: filtered
+    tag: security
     filters:
       - name: "vulnerabilities"
         pattern: "(CVE|vulnerability|exploit|breach)"
@@ -227,6 +233,8 @@ news_feeds:
 ```
 
 _(The `ai_filtered` feed type was removed in M10. Only `unfiltered` and `filtered` are valid.)_
+
+_(News feeds are grouped into tag tabs — `tag` is optional per entry, defaulting to `"General"`; `news_tag_priority` orders the tabs, with any unlisted tag appended after. See FR-090–FR-094 and ADR-016.)_
 
 ## 4) Alternatives considered
 

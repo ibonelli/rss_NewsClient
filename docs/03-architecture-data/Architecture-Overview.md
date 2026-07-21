@@ -79,7 +79,7 @@ src/
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/api/news` | All news feeds with metadata and item counts |
+| GET | `/api/news` | All news feeds with metadata and item counts; each feed dict includes `tag` (default `"General"`); array is pre-sorted into tag-priority order per `news_tag_priority` (FR-090, FR-091) |
 | GET | `/api/news/{feed_name}/items` | Items for a feed filtered by `read` bool (default `false`); type determines source table |
 | POST | `/api/news/items/{id}/read` | Mark `news_items` row as read |
 | POST | `/api/news/items/{id}/unread` | Mark `news_items` row as unread |

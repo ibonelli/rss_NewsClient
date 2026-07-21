@@ -29,6 +29,8 @@
 
 ### Ingestion — News
 - **FR-019:** The system MUST support ingesting from news RSS/Atom feeds configurable in `config.yaml`, each with a `type` field: `unfiltered` or `filtered`. (The `ai_filtered` type has been removed — see Change-Log M10.)
+- **FR-090:** Each `news_feeds` entry MUST support a single-string `tag` field identifying which tab the feed is grouped under in the News UI. A `news_feeds` entry with no `tag` set MUST fall back to a default tag of `"General"`. `tag` is config-only metadata — it MUST NOT be persisted on `news_items` or any other DB row (mirrors the existing `type`/`filters` treatment). `design_feeds` is unaffected by `tag` — this requirement applies to News only.
+- **FR-091:** `config.yaml` MUST support an ordered `news_tag_priority` list (same shape/purpose as the existing `genre_priority`) controlling the left-to-right order of tag tabs in the News UI. A tag used by at least one `news_feeds` entry but absent from `news_tag_priority` MUST still get its own tab, appended after the ordered ones, in the order that tag first appears in `news_feeds`.
 - **FR-020:** News feeds MUST be fetched on the same ~2h cron cycle as the movie feed.
 - **FR-021:** Unfiltered news feeds MUST store all fetched items without filtering.
 - **FR-022:** Filtered news feeds MUST store ALL fetched items. Items matching the configured regex MUST have the matching filter identifier recorded in a dedicated `matched_filter` field; non-matching items have this field null.
@@ -111,6 +113,8 @@
 - **FR-028:** The web application MUST provide a separate "News" tab, distinct from the Movies tab.
 - **FR-029:** Each news feed view MUST provide a **Read/Unread toggle** (Unread default) that switches between items with `is_read=false` and items with `is_read=true` without a page reload. Per-item "Mark Read" (in Unread view) and "Mark Unread" (in Read view) buttons MUST remove the item from the current view immediately on click, persisted in DB, survives restart.
 - **FR-030:** For filtered feeds, the News tab MUST show only items where `matched_filter` is not null, displaying the matched filter name/pattern alongside each item.
+- **FR-092:** The News tab MUST render a two-level picker: a row of tag tabs (ordered per FR-091) above the existing per-feed picker, the latter scoped to only the feeds carrying the active tag. Selecting a different tag tab MUST auto-select the first feed under that tag, mirroring the existing single-feed auto-select behavior (same pattern as the current flat picker's initial-load selection).
+- **FR-093:** Each tag tab MUST display an aggregate unread-count badge equal to the sum of `unread_count` across every feed grouped under that tag.
 ~~**FR-031:** Removed — the `ai_filtered` feed type has been eliminated.~~
 - ~~**FR-032:** Removed — the raw `news_items` sub-view for AI-filtered feeds is no longer provided.~~
 
@@ -126,8 +130,9 @@
 
 ### Web Application — Navigation / URL Routing
 - **FR-075:** The web application MUST expose a distinct, bookmarkable URL per feed type: `/movies`, `/series`, `/news`, `/design`. Navigating directly to any of these URLs MUST load the app with the corresponding tab active.
-- **FR-076:** The News and Design tabs MUST additionally support deep-linking to a specific configured feed via `/news/{feed_name}` and `/design/{feed_name}`, where `feed_name` matches a `name` entry under `news_feeds` / `design_feeds` in `config.yaml` (URL-encoded).
+- **FR-076:** The News and Design tabs MUST additionally support deep-linking to a specific configured feed via `/news/{feed_name}` and `/design/{feed_name}`, where `feed_name` matches a `name` entry under `news_feeds` / `design_feeds` in `config.yaml` (URL-encoded). ~~For News, this two-segment form is superseded by FR-094.~~
 - **FR-077:** Clicking a tab or selecting a News/Design sub-feed MUST update the browser URL to match (without a full page reload), and browser back/forward MUST restore the previously active tab/feed. Visiting an unrecognized path MUST fall back to the Movies tab.
+- **FR-094:** The News tab's deep-link route MUST extend to a tag-scoped, three-segment form: `/news/{tag}/{feed_name}` (specific feed within a tag) and `/news/{tag}` (tag tab active, first feed under it auto-selected, per FR-092). The previous two-segment `/news/{feed_name}` form (FR-076) is no longer a valid News route. No redirect/alias is provided for old two-segment links — visiting one (or any other unrecognized News path) MUST fall back to the News tab's own default (first tag per FR-091, first feed within it), consistent with the general unrecognized-path handling in FR-077. `design_feeds` / `/design/{feed_name}` are unaffected — this change applies to News only.
 
 ### Export (All News Feeds)
 - **FR-033:** The web application MUST expose `GET /api/news/{feed}/export` for any configured news feed, returning a downloadable JSON file containing only `unread_items` (all `news_items` rows for that feed where `is_read = false`). Each item MUST include its `news_items.id`, title, URL, publication date, and content.
@@ -169,6 +174,7 @@
 - **Series (`series` table):** series title (unique), IMDb ID (nullable), is_ignored flag, is_following flag. The Inbox/OnGoing category split is NOT a stored field — it is derived at query time from the series' earliest-ingested episode (FR-088).
 - **Series episodes (`series_episodes` table):** FK → series, season number, episode number, quality variants (JSON list of `{quality, torrent_page_url}`), RSS entry date, ingestion timestamp, is_read flag, ignored status
 - **News — `news_items` (all feed types):** title, URL, publication date, source feed name, full content, ingestion timestamp, read status, matched_filter (nullable)
+- **News — feed grouping:** `tag` (single string, default `"General"` when unset) lives only in `config.yaml` on each `news_feeds` entry, alongside a `news_tag_priority` ordered list — not a DB column, not stored per `news_items` row (FR-090, FR-091)
 - **News — `ai_filtered_views`:** legacy table retained on disk; no longer written or read by the application
 - **Design — `design_items`:** title, article URL, publication date (nullable), source feed name, summary (plain text), image URL (nullable), ingestion timestamp, read status
 - Retention: indefinite (database on disk)
@@ -212,6 +218,12 @@
 - **AC-036:** Clicking a series' title row (or its chevron) toggles that single series between expanded and collapsed without affecting any other series row, with no page reload and no change to which series/episodes are in view; the title, unread-count badge (collapsed only), and category action buttons remain visible in both states.
 - **AC-037:** The top-level Only-Title/Full buttons are shared across all four categories, bulk-apply their setting to every currently visible series (clearing individual per-series overrides), and reset to Full (all expanded) on page reload — never persisted in localStorage or the database. Switching the Read/Unread toggle or the category toggle also clears individual per-series overrides, returning every row to the current Only-Title/Full setting.
 - **AC-038:** Clicking the series title link (opens IMDb in a new tab) or any category action button (Follow/Unfollow/Ignore/Unignore) does not also toggle that series' expand/collapse state.
+
+- **AC-039:** Each configured news feed appears under exactly one tag tab in the News UI; feeds sharing a `tag` appear together under that tab.
+- **AC-040:** A `news_feeds` entry with no `tag` set appears under the "General" tab.
+- **AC-041:** Tag tabs appear left-to-right in `news_tag_priority` order; a tag not listed there still gets a tab, appended after the ordered ones, in first-appearance order.
+- **AC-042:** Visiting `/news/{tag}/{feed_name}` loads the News tab with that tag tab and feed active; visiting `/news/{tag}` alone loads that tag's first feed; visiting an old-style `/news/{feed_name}` (or any other unrecognized News path) falls back to the News tab's default tag/feed, with no redirect attempted.
+- **AC-043:** Each tag tab's badge shows the sum of `unread_count` across every feed grouped under that tag.
 
 - **AC-021:** Design items from configured design feeds appear in the Design tab, displayed as cards with image (if available), title linked to the article URL, and summary.
 - **AC-022:** Items without an image in the RSS feed appear as cards with title and summary only — no placeholder is shown.

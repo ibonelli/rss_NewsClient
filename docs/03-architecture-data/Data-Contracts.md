@@ -352,19 +352,29 @@ genre_priority:
   - comedy
   - documentary
 
+news_tag_priority:
+  - tech
+  - security
+
 news_feeds:
   - name: "Tech News"
     url: "https://example.com/tech/feed"
     type: unfiltered
+    tag: tech
 
   - name: "Security"
     url: "https://example.com/security/feed"
     type: filtered
+    tag: security
     filters:
       - name: "vulnerabilities"
         pattern: "(CVE|vulnerability|exploit|breach)"
       - name: "tooling"
         pattern: "(release|update|patch) v?[0-9]"
+
+# `tag` is optional; entries without one fall back to the "General" tag (FR-090).
+# `news_tag_priority` orders tag tabs left-to-right (FR-091); any tag used in
+# news_feeds but not listed here still gets a tab, appended after these.
 
 design_feeds:
   - name: "Designboom"
@@ -627,11 +637,13 @@ Only `is_read=false` episodes within the scoped series are affected.
 ```json
 {
   "feeds": [
-    { "name": "Tech News", "type": "unfiltered", "unread_count": 12 },
-    { "name": "Security", "type": "filtered", "unread_count": 3 }
+    { "name": "Tech News", "type": "unfiltered", "tag": "tech", "unread_count": 12 },
+    { "name": "Security", "type": "filtered", "tag": "security", "unread_count": 3 }
   ]
 }
 ```
+
+`tag` defaults to `"General"` server-side for any `news_feeds` entry without one (FR-090). The `feeds` array is pre-sorted server-side into tag-priority order — feeds sharing a tag are adjacent, tag groups follow `news_tag_priority` order, and any tag not in that list is appended after the ordered ones, in first-appearance order (FR-091). The client groups this already-ordered array by `tag` to render the tag-tab row (FR-092); it does not need `news_tag_priority` itself. Each tag tab's badge is the sum of `unread_count` across its feeds (FR-093).
 
 ### GET `/api/news/{feed_name}/items`
 
