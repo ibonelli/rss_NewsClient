@@ -1,7 +1,7 @@
 ## ToDo
 
 1. In News, each day should have a "Mark as Read" button which only applies to that day. The name will be different, "Mark day as Read".
-2. Add for the News feed a text tag that will be used to group them in tabs. So News will have a list of tag as tabs which each contain a number of feeds. All configured in "config.yml". Each entry will have "name", "url", "type" & the new property "tag".
+2. Need to find a way to import marked as "to follow" from previous system, and need to find a way to do the same in the new system. Could be a different system that runs on a separate cron. So we create a list of links to the articles, and then the other system goes to process them. Or just collect them and I can pull the list to use in a different system.
 
 ## ToDo later
 
@@ -19,8 +19,7 @@
 
 General
 
-When coding, generate a plan and ask for all permissions at once. And also ask for general tool access, not particular commands.
-Ask for general tool access, not particular commands. If necessary, create a plan and ask for all permissions at once.
+When coding, generate a plan and ask for all permissions at once. Generate a list of commands you'll run, and request and ask for all permissions at once.
 
 BigChange
 
