@@ -1,13 +1,15 @@
 ## ToDo
 
-1. In News, each day should have a "Mark as Read" button which only applies to that day. The name will be different, "Mark day as Read".
-2. Need to find a way to import marked as "to follow" from previous system, and need to find a way to do the same in the new system. Could be a different system that runs on a separate cron. So we create a list of links to the articles, and then the other system goes to process them. Or just collect them and I can pull the list to use in a different system.
+1. I need a way to save the data from an rss entry (title, link, date, feed name & summary). It should go into a different table with a common format, but it can get saved from any type of feed. These should go into a separate view (saved), which can be exported as currently News allow exporting.
+2. In News, each day should have a "Mark as Read" button which only applies to that day. The name will be different, "Mark day as Read".
+3. Need to find a way to import marked as "to follow" from previous system, and need to find a way to do the same in the new system. Could be a different system that runs on a separate cron. So we create a list of links to the articles, and then the other system goes to process them. Or just collect them and I can pull the list to use in a different system.
+4. The export in News should apply to the view, not only unread. Any view should be exportable.
 
 ## ToDo later
 
 1. Need to consume a different kind of "feed". It is the listing of a webpage which has links to articles with the title and a description. It will be a new kind of feed like "News", but it won't use RSS as source. Just and HTML listing. It will require configuration for each feed to figure out the HTML structure and mapping into a feed like record. For this new feed use `https://betovaldez.com.ar/category/actualidad/` which should match with `http://betovaldez.com.ar/feed/` to model it.
 2. There needs to be a new category which can save links in all types of feeds. Feeds can be marked as "ToKeep"
-3. There should be a housekeeping process that deletes old links to keep DB size under control
+3. There should be a housekeeping process that deletes old links to keep DB size under control.
 
 ## For later
 

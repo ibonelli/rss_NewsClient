@@ -86,11 +86,6 @@ news_tag_priority:
   - misc
 
 news_feeds:
-  - name: "Tech News"
-    url: "https://www.scmp.com/rss/320663/feed"
-    type: unfiltered
-    tag: tech
-
   - name: "International News El Mundo"
     url: "https://e00-elmundo.uecdn.es/elmundo/rss/internacional.xml"
     type: unfiltered
@@ -109,7 +104,7 @@ news_feeds:
   - name: "Visual Capitalist"
     url: "https://feeds.feedburner.com/visualcapitalist"
     type: unfiltered
-    tag: data
+    tag: economy
 
   - name: "IEEE Spectrum"
     url: "https://spectrum.ieee.org/feeds/feed.rss"
@@ -139,27 +134,27 @@ news_feeds:
   - name: "South China Morning Post"
     url: "https://www.scmp.com/rss/320663/feed"
     type: unfiltered
-    tag: world
+    tag: tech
 
   - name: "Our World in Data"
     url: "https://ourworldindata.org/feed"
     type: unfiltered
-    tag: data
+    tag: economy
 
   - name: "Web3 is going great"
     url: "https://web3isgoinggreat.com/feed.xml"
     type: unfiltered
-    tag: tech
+    tag: economy
 
   - name: "Bitcoin Magazine"
     url: "https://bitcoinmagazine.com/.rss/full/"
     type: unfiltered
-    tag: tech
+    tag: economy
 
   - name: "Beto Valdez"
     url: "http://betovaldez.com.ar/feed/"
     type: unfiltered
-    tag: misc
+    tag: economy
 
   - name: "Linode Blog"
     url: "https://blog.linode.com/feed/"
@@ -170,6 +165,11 @@ news_feeds:
     url: "http://www.debian.org/News/news"
     type: unfiltered
     tag: tech
+
+  - name: "Linode Blog"
+    url: "https://blog.linode.com/feed/"
+    type: unfiltered
+    tag: security
 
   - name: "Security"
     url: "https://example.com/security/feed"
