@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-### Added — M16: Saved Entries (ADR-017) (Planned)
+### Added — M16: Saved Entries (ADR-017)
 - New `saved_entries` table: common format across all four content tabs (Movies, Series, News, Design) — `source_type`, `source_id`, `title`, `link`, `entry_date`, `feed_name`, `summary`, `saved_at`; unique on `(source_type, source_id)` for idempotent saving
 - New "Save Entry" button on every item row (Movies, Series — at the series-title level, not per-episode — News, Design), alongside the existing Mark Read/Follow/Ignore actions; visible regardless of read/unread or category state; becomes a disabled "Saved" state once clicked
 - New endpoints: `POST /api/movies/{id}/save`, `POST /api/series/{series_id}/save`, `POST /api/news/items/{id}/save`, `POST /api/design/items/{id}/save` — all idempotent on `(source_type, source_id)`
@@ -10,6 +10,7 @@
 - New "Saved" tab: flat list of all saved entries across all four types, ordered most-recently-saved first; no read/unread toggle, no category/filter toggle — a "Remove from Saved" action per row (`DELETE /api/saved/{id}`) and an "Export" button (`GET /api/saved/export`, dumps every saved row — no unread-only filtering, unlike the News export)
 - New bookmarkable route `/saved`, following the existing per-tab URL pattern (FR-075)
 - No changes to the CLI Ingester or Filter Processor — Saved is entirely a Web UI feature, populated only by user action
+- New idempotent migration `tools/migrate_008_saved_entries.sh` — creates `saved_entries` (with its unique index and `saved_at` index) via `SavedEntry.__table__.create(engine, checkfirst=True)` for an already-deployed DB that won't get the table from `create_all()` until its next startup; verified against the live MySQL dev DB (drop/create/re-run no-op) and a fresh SQLite file
 - Fully specified during the docs pass before any code was written: FR-095–FR-103, AC-044–AC-050, Data-Contracts.md's `SavedEntry` schema/API contracts, and ADR-017 (records the single-common-table decision and the per-type field mapping tradeoffs)
 - See FR-095–FR-103, AC-044–AC-050
 

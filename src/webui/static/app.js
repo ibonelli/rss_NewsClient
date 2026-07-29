@@ -7,7 +7,7 @@ const html = htm.bind(React.createElement);
 // the History API. News is tag-scoped (ADR-016); Design stays a flat feed_name.
 // ---------------------------------------------------------------------------
 
-const TABS = ["movies", "series", "news", "design"];
+const TABS = ["movies", "series", "news", "design", "saved"];
 
 function parseLocation() {
     const parts = window.location.pathname.split("/").filter(Boolean);
@@ -73,6 +73,38 @@ function Badge({ children, className = "" }) {
 }
 
 // ---------------------------------------------------------------------------
+// Save Entry button — shared across Movies/Series/News/Design (ADR-017).
+// Unlike Mark Read, saving never removes the item from view — onSave just
+// flips is_saved on the item in local state so the button becomes a
+// disabled "Saved" state (FR-099).
+// ---------------------------------------------------------------------------
+
+function SaveButton({ isSaved, saveUrl, onSave, className = "" }) {
+    const [loading, setLoading] = useState(false);
+
+    const handleClick = async (e) => {
+        if (e) e.stopPropagation();
+        setLoading(true);
+        try {
+            await fetch(saveUrl, { method: "POST" });
+            onSave();
+        } catch (err) {
+            console.error("Failed to save entry:", err);
+        }
+        setLoading(false);
+    };
+
+    if (isSaved) {
+        return html`<button className=${`btn btn-saved ${className}`} disabled>Saved</button>`;
+    }
+    return html`
+        <button className=${`btn btn-save ${className}`} onClick=${handleClick} disabled=${loading}>
+            ${loading ? "..." : "Save Entry"}
+        </button>
+    `;
+}
+
+// ---------------------------------------------------------------------------
 // Shared news toolbar — export / import / mark-all-read
 // ---------------------------------------------------------------------------
 
@@ -128,7 +160,7 @@ function HealthBanner() {
 // Movies tab
 // ---------------------------------------------------------------------------
 
-function MovieCard({ movie, onMarkRead, onMarkUnread, onEnrich }) {
+function MovieCard({ movie, onMarkRead, onMarkUnread, onEnrich, onSaveEntry }) {
     const [loading, setLoading] = useState(false);
     const [enriching, setEnriching] = useState(false);
 
@@ -217,6 +249,7 @@ function MovieCard({ movie, onMarkRead, onMarkUnread, onEnrich }) {
                         <button className="btn btn-enrich" onClick=${handleEnrich} disabled=${enriching}>
                             ${enriching ? "Loading..." : "Refresh Ratings"}
                         </button>
+                        <${SaveButton} isSaved=${movie.is_saved} saveUrl=${`/api/movies/${movie.id}/save`} onSave=${() => onSaveEntry(movie.id)} />
                     </div>
                 </div>
             </div>
@@ -281,6 +314,12 @@ function MoviesTab() {
         );
     };
 
+    const handleSaveEntry = (movieId) => {
+        setSections(prev =>
+            prev.map(s => ({ ...s, movies: s.movies.map(m => m.id === movieId ? { ...m, is_saved: true } : m) }))
+        );
+    };
+
     if (error) return html`<div className="error">${error}</div>`;
 
     return html`
@@ -320,7 +359,8 @@ function MoviesTab() {
                                     <${MovieCard} key=${movie.id} movie=${movie}
                                         onMarkRead=${!isRead ? removeFromView : undefined}
                                         onMarkUnread=${isRead ? removeFromView : undefined}
-                                        onEnrich=${handleEnrich} />
+                                        onEnrich=${handleEnrich}
+                                        onSaveEntry=${handleSaveEntry} />
                                 `)}
                             </div>
                         </section>
@@ -334,7 +374,7 @@ function MoviesTab() {
 // News tab — shared components
 // ---------------------------------------------------------------------------
 
-function NewsItemRow({ item, isReadView, onRemove }) {
+function NewsItemRow({ item, isReadView, onRemove, onSaveEntry }) {
     const [loading, setLoading] = useState(false);
 
     const handleClick = async () => {
@@ -356,6 +396,7 @@ function NewsItemRow({ item, isReadView, onRemove }) {
                     <a className="news-item-title" href=${item.url} target="_blank" rel="noreferrer">${item.title}</a>
                     ${item.matched_filter_name && html`<${Badge} className="filter-badge">${item.matched_filter_name}</${Badge}>`}
                 </div>
+                <${SaveButton} isSaved=${item.is_saved} saveUrl=${`/api/news/items/${item.id}/save`} onSave=${() => onSaveEntry(item.id)} />
                 <button className="btn btn-read btn-sm" onClick=${handleClick} disabled=${loading}>
                     ${loading ? "..." : isReadView ? "Mark Unread" : "Mark Read"}
                 </button>
@@ -442,6 +483,10 @@ function NewsFeedView({ feedName, emptyMessage, RowComponent }) {
         setItems(prev => prev.filter(item => item.id !== id));
     };
 
+    const handleSaveEntry = (id) => {
+        setItems(prev => prev.map(item => item.id === id ? { ...item, is_saved: true } : item));
+    };
+
     const handleMarkAllRead = async () => {
         setMarkingAll(true);
         try {
@@ -472,7 +517,7 @@ function NewsFeedView({ feedName, emptyMessage, RowComponent }) {
                         <div key=${group.label} className="news-date-section">
                             <h3 className="news-date-header">${group.label}</h3>
                             <div className="news-list">
-                                ${group.items.map(item => html`<${RowComponent} key=${item.id} item=${item} isReadView=${isRead} onRemove=${handleRemove} />`)}
+                                ${group.items.map(item => html`<${RowComponent} key=${item.id} item=${item} isReadView=${isRead} onRemove=${handleRemove} onSaveEntry=${handleSaveEntry} />`)}
                             </div>
                         </div>
                     `)
@@ -712,6 +757,10 @@ function SeriesTab() {
         setSeriesList(prev => prev.filter(s => s.id !== seriesId));
     };
 
+    const handleSaveEntry = (seriesId) => {
+        setSeriesList(prev => prev.map(s => s.id === seriesId ? { ...s, is_saved: true } : s));
+    };
+
     if (loading) return html`<div className="loading">Loading series...</div>`;
     if (error) return html`<div className="error">${error}</div>`;
 
@@ -767,6 +816,8 @@ function SeriesTab() {
                         <h2 className="series-title" onClick=${() => handleToggleCollapse(series.id)}>
                             <span className="series-chevron">${isCollapsed(series.id) ? "▸" : "▾"}</span>
                             <a href=${series.imdb_url} target="_blank" rel="noreferrer" onClick=${(e) => e.stopPropagation()}>${series.title}</a>
+                            <${SaveButton} className="series-save-btn" isSaved=${series.is_saved}
+                                saveUrl=${`/api/series/${series.id}/save`} onSave=${() => handleSaveEntry(series.id)} />
                             ${isCollapsed(series.id) && html`
                                 <${Badge} className="episode-count-badge">${series.seasons.reduce((n, s) => n + s.episodes.length, 0)}</${Badge}>
                             `}
@@ -825,7 +876,7 @@ function SeriesTab() {
 // Design tab
 // ---------------------------------------------------------------------------
 
-function DesignItemCard({ item, isReadView, onRemove }) {
+function DesignItemCard({ item, isReadView, onRemove, onSaveEntry }) {
     const [loading, setLoading] = useState(false);
 
     const handleClick = async () => {
@@ -857,6 +908,7 @@ function DesignItemCard({ item, isReadView, onRemove }) {
                     <button className="btn btn-read btn-sm" onClick=${handleClick} disabled=${loading}>
                         ${loading ? "..." : isReadView ? "Mark Unread" : "Mark Read"}
                     </button>
+                    <${SaveButton} isSaved=${item.is_saved} saveUrl=${`/api/design/items/${item.id}/save`} onSave=${() => onSaveEntry(item.id)} />
                 </div>
             </div>
         </div>
@@ -887,6 +939,10 @@ function DesignFeedView({ feedName }) {
 
     const handleRemove = (id) => {
         setItems(prev => prev.filter(item => item.id !== id));
+    };
+
+    const handleSaveEntry = (id) => {
+        setItems(prev => prev.map(item => item.id === id ? { ...item, is_saved: true } : item));
     };
 
     const handleMarkAllRead = async () => {
@@ -921,7 +977,7 @@ function DesignFeedView({ feedName }) {
                 : items.length === 0
                     ? html`<div className="empty-state">${isRead ? "No read items." : "No items yet."}</div>`
                     : html`<div className="design-grid">
-                        ${items.map(item => html`<${DesignItemCard} key=${item.id} item=${item} isReadView=${isRead} onRemove=${handleRemove} />`)}
+                        ${items.map(item => html`<${DesignItemCard} key=${item.id} item=${item} isReadView=${isRead} onRemove=${handleRemove} onSaveEntry=${handleSaveEntry} />`)}
                     </div>`
             }
         </div>
@@ -985,6 +1041,67 @@ function DesignTab({ initialFeedName }) {
 }
 
 // ---------------------------------------------------------------------------
+// Saved tab (ADR-017) — flat list across all four content types, no
+// read/unread or category toggle (FR-100); Remove + Export only.
+// ---------------------------------------------------------------------------
+
+function SavedTab() {
+    const [entries, setEntries] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+        fetch("/api/saved")
+            .then(r => r.json())
+            .then(data => { setEntries(data.entries || []); setLoading(false); })
+            .catch(() => { setError("Failed to load saved entries"); setLoading(false); });
+    }, []);
+
+    const handleRemove = async (id) => {
+        try {
+            await fetch(`/api/saved/${id}`, { method: "DELETE" });
+            setEntries(prev => prev.filter(e => e.id !== id));
+        } catch (e) {
+            console.error("Failed to remove saved entry:", e);
+        }
+    };
+
+    const handleExport = () => {
+        window.location.href = "/api/saved/export";
+    };
+
+    if (loading) return html`<div className="loading">Loading saved entries...</div>`;
+    if (error) return html`<div className="error">${error}</div>`;
+
+    return html`
+        <div>
+            <div className="movies-toolbar">
+                <div className="tab-count">${entries.length} saved</div>
+                <button className="btn btn-secondary btn-sm" onClick=${handleExport}>Export</button>
+            </div>
+            ${entries.length === 0
+                ? html`<div className="empty-state">No saved entries yet.</div>`
+                : html`<div className="news-list saved-list">
+                    ${entries.map(entry => html`
+                        <div key=${entry.id} className="news-item saved-item">
+                            <div className="news-item-header">
+                                <div className="news-item-title-group">
+                                    <a className="news-item-title" href=${entry.link} target="_blank" rel="noreferrer">${entry.title}</a>
+                                    <${Badge} className="filter-badge">${entry.feed_name}</${Badge}>
+                                </div>
+                                <button className="btn btn-secondary btn-sm" onClick=${() => handleRemove(entry.id)}>Remove from Saved</button>
+                            </div>
+                            ${entry.entry_date && html`<div className="design-date">${new Date(entry.entry_date).toLocaleDateString()}</div>`}
+                            ${entry.summary && html`<p className="saved-summary">${entry.summary}</p>`}
+                        </div>
+                    `)}
+                </div>`
+            }
+        </div>
+    `;
+}
+
+// ---------------------------------------------------------------------------
 // Root app with tab navigation
 // ---------------------------------------------------------------------------
 
@@ -1023,6 +1140,12 @@ function App() {
                     >
                         Design
                     </button>
+                    <button
+                        className=${`tab-btn ${activeTab === "saved" ? "active" : ""}`}
+                        onClick=${() => handleTabClick("saved")}
+                    >
+                        Saved
+                    </button>
                 </nav>
             </header>
             <${HealthBanner} />
@@ -1031,6 +1154,7 @@ function App() {
                 ${activeTab === "series" && html`<${SeriesTab} />`}
                 ${activeTab === "news" && html`<${NewsTab} key=${`${tag || ""}-${feedName || ""}`} initialTag=${tag} initialFeedName=${feedName} />`}
                 ${activeTab === "design" && html`<${DesignTab} key=${feedName} initialFeedName=${feedName} />`}
+                ${activeTab === "saved" && html`<${SavedTab} />`}
             </main>
         </div>
     `;

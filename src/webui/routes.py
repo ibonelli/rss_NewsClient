@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from collections import defaultdict
 
-from src.common.models import DesignItem, FeedHealth, Filter, Movie, NewsItem, Series, SeriesEpisode
+from src.common.models import DesignItem, FeedHealth, Filter, Movie, NewsItem, SavedEntry, Series, SeriesEpisode
 from src.webui.filters import filter_movies, group_by_year
 from src.webui.enrichment import enrich_movie
 
@@ -41,7 +41,7 @@ def _get_config(request: Request) -> dict:
     return request.app.state.config
 
 
-def _movie_to_dict(movie: Movie) -> dict:
+def _movie_to_dict(movie: Movie, saved_ids: set[int] | None = None) -> dict:
     return {
         "id": movie.id,
         "title": movie.title,
@@ -60,6 +60,7 @@ def _movie_to_dict(movie: Movie) -> dict:
         "enrichment_date": movie.enrichment_date.isoformat() if movie.enrichment_date else None,
         "enrichment_error": movie.enrichment_error,
         "is_read": movie.is_read,
+        "is_saved": movie.id in (saved_ids or set()),
     }
 
 
@@ -92,6 +93,7 @@ async def serve_index():
 @router.get("/news/{tag}/{feed_name}")
 @router.get("/design")
 @router.get("/design/{feed_name}")
+@router.get("/saved")
 async def serve_spa_route(tag: str | None = None, feed_name: str | None = None):
     return FileResponse(str(_INDEX_HTML))
 
@@ -108,7 +110,8 @@ async def get_movies(
     flagged: bool = Query(default=True),
 ):
     movies = session.query(Movie).filter(Movie.is_read == read).all()
-    movie_dicts = [_movie_to_dict(m) for m in movies]
+    saved_ids = _saved_source_ids(session, "movie")
+    movie_dicts = [_movie_to_dict(m, saved_ids) for m in movies]
 
     flagged_dicts = filter_movies(movie_dicts, config)
     if flagged:
@@ -180,6 +183,15 @@ async def enrich(
     }
 
 
+@router.post("/api/movies/{movie_id}/save")
+async def save_movie(movie_id: int, session: Session = Depends(_get_session)):
+    movie = session.query(Movie).filter(Movie.id == movie_id).first()
+    if not movie:
+        raise HTTPException(status_code=404, detail="Movie not found")
+    entry = _get_or_create_saved_entry(session, "movie", movie.id, _movie_save_fields(movie))
+    return _saved_entry_to_dict(entry)
+
+
 # ---------------------------------------------------------------------------
 # Series
 # ---------------------------------------------------------------------------
@@ -244,23 +256,26 @@ def _get_series_or_404(session: Session, series_id: int) -> Series:
     return row
 
 
-def _build_series_response(results: list) -> list[dict]:
+def _series_imdb_url(series: Series) -> str:
+    if series.imdb_id:
+        return f"https://www.imdb.com/title/{series.imdb_id}/"
+    return f"https://www.imdb.com/search/title/?title={quote_plus(series.title)}&title_type=tv_series"
+
+
+def _build_series_response(results: list, saved_ids: set[int] | None = None) -> list[dict]:
     """Build the series API response from (Series, SeriesEpisode) join tuples."""
+    saved_ids = saved_ids or set()
     by_series: dict[int, dict] = {}
     for series, ep in results:
         if series.id not in by_series:
-            imdb_url = (
-                f"https://www.imdb.com/title/{series.imdb_id}/"
-                if series.imdb_id
-                else f"https://www.imdb.com/search/title/?title={quote_plus(series.title)}&title_type=tv_series"
-            )
             by_series[series.id] = {
                 "id": series.id,
                 "title": series.title,
                 "imdb_id": series.imdb_id,
-                "imdb_url": imdb_url,
+                "imdb_url": _series_imdb_url(series),
                 "is_following": series.is_following,
                 "is_ignored": series.is_ignored,
+                "is_saved": series.id in saved_ids,
                 "seasons": defaultdict(list),
             }
         by_series[series.id]["seasons"][ep.season].append(ep)
@@ -303,7 +318,8 @@ async def get_series(
         .order_by(Series.title, SeriesEpisode.season, SeriesEpisode.episode)
         .all()
     )
-    return {"read": read, "category": category, "series": _build_series_response(rows)}
+    saved_ids = _saved_source_ids(session, "series")
+    return {"read": read, "category": category, "series": _build_series_response(rows, saved_ids)}
 
 
 @router.post("/api/series/{series_id}/follow")
@@ -342,6 +358,13 @@ async def unignore_series(series_id: int, session: Session = Depends(_get_sessio
     row.updated_at = datetime.utcnow()
     session.commit()
     return {"id": row.id, "title": row.title, "is_following": row.is_following, "is_ignored": False}
+
+
+@router.post("/api/series/{series_id}/save")
+async def save_series(series_id: int, session: Session = Depends(_get_session)):
+    row = _get_series_or_404(session, series_id)
+    entry = _get_or_create_saved_entry(session, "series", row.id, _series_save_fields(row))
+    return _saved_entry_to_dict(entry)
 
 
 @router.post("/api/series/episodes/{episode_id}/read")
@@ -418,6 +441,98 @@ async def ignore_all_series(
     )
     session.commit()
     return {"ignored": count}
+
+
+# ---------------------------------------------------------------------------
+# Saved entries — shared helpers (ADR-017)
+# ---------------------------------------------------------------------------
+
+def _movie_imdb_url(title: str, year: int, imdb_id: str | None) -> str:
+    """Mirrors the client-side imdbUrl computation in app.js's MovieCard —
+    kept in sync manually since movies have no server-side IMDb URL field."""
+    if imdb_id:
+        return f"https://www.imdb.com/title/{imdb_id}/"
+    return f"https://www.imdb.com/find/?q={quote_plus(title + ' ' + str(year))}&s=tt&ttype=ft"
+
+
+def _movie_save_fields(movie: Movie) -> dict:
+    return {
+        "title": movie.title,
+        "link": _movie_imdb_url(movie.title, movie.year, movie.imdb_id),
+        "entry_date": movie.feed_entry_date,
+        "feed_name": "Movies",
+        "summary": movie.plot or "",
+    }
+
+
+def _series_save_fields(series: Series) -> dict:
+    return {
+        "title": series.title,
+        "link": _series_imdb_url(series),
+        "entry_date": series.created_at,
+        "feed_name": "Series",
+        "summary": "",
+    }
+
+
+def _news_save_fields(item: NewsItem) -> dict:
+    return {
+        "title": item.title,
+        "link": item.url,
+        "entry_date": item.published_at,
+        "feed_name": item.feed_name,
+        "summary": item.full_content,
+    }
+
+
+def _design_save_fields(item: DesignItem) -> dict:
+    return {
+        "title": item.title,
+        "link": item.url,
+        "entry_date": item.published_at,
+        "feed_name": item.feed_name,
+        "summary": item.summary,
+    }
+
+
+def _get_or_create_saved_entry(session: Session, source_type: str, source_id: int, fields: dict) -> SavedEntry:
+    """Idempotent on (source_type, source_id) — FR-097/V-043: re-saving an
+    already-saved item returns the existing row unchanged, never a duplicate
+    or an update of the existing snapshot."""
+    existing = (
+        session.query(SavedEntry)
+        .filter(SavedEntry.source_type == source_type, SavedEntry.source_id == source_id)
+        .first()
+    )
+    if existing:
+        return existing
+    entry = SavedEntry(source_type=source_type, source_id=source_id, **fields)
+    session.add(entry)
+    session.commit()
+    return entry
+
+
+def _saved_entry_to_dict(entry: SavedEntry) -> dict:
+    return {
+        "id": entry.id,
+        "source_type": entry.source_type,
+        "source_id": entry.source_id,
+        "title": entry.title,
+        "link": entry.link,
+        "entry_date": entry.entry_date.isoformat() if entry.entry_date else None,
+        "feed_name": entry.feed_name,
+        "summary": entry.summary,
+        "saved_at": entry.saved_at.isoformat() if entry.saved_at else None,
+    }
+
+
+def _saved_source_ids(session: Session, source_type: str) -> set[int]:
+    """The set of source_ids already saved for a given source_type — one query
+    per list request, avoiding an is_saved N+1 lookup per item (FR-098)."""
+    return {
+        sid for (sid,) in session.query(SavedEntry.source_id)
+        .filter(SavedEntry.source_type == source_type).all()
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -515,6 +630,7 @@ async def get_news_items(
         raise HTTPException(status_code=404, detail="Feed not found")
 
     feed_type = feed_cfg.get("type", "unfiltered")
+    saved_ids = _saved_source_ids(session, "news")
 
     if feed_type == "unfiltered":
         rows = (
@@ -531,6 +647,7 @@ async def get_news_items(
                 "published_at": r.published_at.isoformat() if r.published_at else None,
                 "ingested_at": r.ingested_at.isoformat() if r.ingested_at else None,
                 "is_read": r.is_read,
+                "is_saved": r.id in saved_ids,
             }
             for r in rows
         ]
@@ -555,6 +672,7 @@ async def get_news_items(
                 "published_at": r.published_at.isoformat() if r.published_at else None,
                 "ingested_at": r.ingested_at.isoformat() if r.ingested_at else None,
                 "is_read": r.is_read,
+                "is_saved": r.id in saved_ids,
                 "matched_filter_name": filters.get(r.matched_filter_id, ""),
             }
             for r in rows
@@ -591,6 +709,13 @@ async def mark_news_item_unread(item_id: int, session: Session = Depends(_get_se
     item.is_read = False
     session.commit()
     return {"id": item.id, "is_read": False}
+
+
+@router.post("/api/news/items/{item_id}/save")
+async def save_news_item(item_id: int, session: Session = Depends(_get_session)):
+    item = _get_news_item(session, item_id)
+    entry = _get_or_create_saved_entry(session, "news", item.id, _news_save_fields(item))
+    return _saved_entry_to_dict(entry)
 
 
 @router.post("/api/news/{feed_name}/read-all")
@@ -705,6 +830,7 @@ async def get_design_items(
         .order_by(DesignItem.published_at.desc())
         .all()
     )
+    saved_ids = _saved_source_ids(session, "design")
     items = [
         {
             "id": r.id,
@@ -714,6 +840,7 @@ async def get_design_items(
             "summary": r.summary,
             "image_url": r.image_url,
             "is_read": r.is_read,
+            "is_saved": r.id in saved_ids,
         }
         for r in rows
     ]
@@ -740,6 +867,15 @@ async def mark_design_item_unread(item_id: int, session: Session = Depends(_get_
     return {"id": item.id, "is_read": False}
 
 
+@router.post("/api/design/items/{item_id}/save")
+async def save_design_item(item_id: int, session: Session = Depends(_get_session)):
+    item = session.query(DesignItem).filter(DesignItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Design item not found")
+    entry = _get_or_create_saved_entry(session, "design", item.id, _design_save_fields(item))
+    return _saved_entry_to_dict(entry)
+
+
 @router.post("/api/design/{feed_name}/read-all")
 async def mark_all_design_read(
     feed_name: str,
@@ -752,3 +888,43 @@ async def mark_all_design_read(
     ).update({"is_read": True}, synchronize_session=False)
     session.commit()
     return {"marked_read": count}
+
+
+# ---------------------------------------------------------------------------
+# Saved (ADR-017)
+# ---------------------------------------------------------------------------
+
+@router.get("/api/saved")
+async def get_saved(session: Session = Depends(_get_session)):
+    entries = session.query(SavedEntry).order_by(SavedEntry.saved_at.desc()).all()
+    return {"entries": [_saved_entry_to_dict(e) for e in entries], "total_count": len(entries)}
+
+
+@router.delete("/api/saved/{entry_id}")
+async def delete_saved(entry_id: int, session: Session = Depends(_get_session)):
+    entry = session.query(SavedEntry).filter(SavedEntry.id == entry_id).first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Saved entry not found")
+    session.delete(entry)
+    session.commit()
+    return {"ok": True}
+
+
+@router.get("/api/saved/export")
+async def export_saved(session: Session = Depends(_get_session)):
+    """Return every saved_entries row as a JSON download — no read/unread
+    filtering applies (Saved has no read state), unlike the unread-only
+    News export (FR-102)."""
+    entries = session.query(SavedEntry).order_by(SavedEntry.saved_at.desc()).all()
+
+    payload = {
+        "exported_at": datetime.utcnow().isoformat() + "Z",
+        "entries": [_saved_entry_to_dict(e) for e in entries],
+    }
+
+    logger.info("Saved export: %d items", len(entries))
+
+    return JSONResponse(
+        content=payload,
+        headers={"Content-Disposition": 'attachment; filename="saved-export.json"'},
+    )

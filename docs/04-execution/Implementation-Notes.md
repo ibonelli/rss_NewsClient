@@ -2,7 +2,7 @@
 
 ## Scope implemented
 
-All milestones M1–M10 and M12–M15 are implemented and running in production. M11 (Design Feed) is documented and awaiting implementation. M16 (Saved Entries) is documented and awaiting implementation.
+All milestones M1–M10 and M12–M16 are implemented and running in production. M11 (Design Feed) is documented and awaiting implementation.
 
 - **M1 — Ingestion:** CLI ingester, RSS fetch/parse, dedup, storage
 - **M2 — Enrichment:** On-demand OMDb enrichment via web UI; stores `imdb_id` for direct linking
@@ -454,7 +454,7 @@ No markup, sorting, or grouping logic changes — pure CSS density pass.
 
 ---
 
-## M16 — Saved Entries (ADR-017) (Planned)
+## M16 — Saved Entries (ADR-017)
 
 ### Scope
 - Feature request: a cross-feed "bookmark" mechanism — save any item from any of the four content tabs into one common-format table, browsable and exportable from a new Saved tab
@@ -466,11 +466,12 @@ No markup, sorting, or grouping logic changes — pure CSS density pass.
 - New Saved tab in the React frontend: flat list ordered by `saved_at` descending, "Remove from Saved" per row, "Export" button; new `/saved` route
 - No CLI/ingester or Filter Processor changes — this is Web UI-only, populated by user action, not by ingestion
 
-### Files to touch
-- `src/common/models.py` — add `SavedEntry` model + `hash`-free unique index on `(source_type, source_id)`
-- `src/webui/routes.py` — add `_movie_to_saved_dict`/etc. mapping helpers (FR-096); add the four `POST .../save` handlers; add `is_saved` computation (single query against `saved_entries` per list request, joined/filtered by `source_type`) to `get_movies`, `get_series`, `get_news_items`, `get_design_items`; add `GET /api/saved`, `DELETE /api/saved/{id}`, `GET /api/saved/export`; extend `serve_spa_route` with `/saved`
-- `src/webui/static/app.js` — add "Save Entry" button to `MovieCard`, series title row, `NewsItemRow`, design card; new `SavedTab` component; `parseLocation()`/tab-bar updated for `/saved`
-- `src/webui/static/styles.css` — new `.save-entry-btn`/`.saved-badge` (or similar) rules for the button's active vs. disabled/"Saved" states; new `.saved-list`/`.saved-item` rules for the flat Saved-tab list (can likely reuse `.news-item` patterns)
+### Files changed
+- `src/common/models.py` — added `SavedEntry` model (`saved_entries` table) with a unique index on `(source_type, source_id)` and a secondary index on `saved_at`; no FK (spans four parent tables)
+- `src/webui/routes.py` — added `_movie_imdb_url()` (mirrors the client-side IMDb URL fallback in `MovieCard`, used only internally by the save path — not exposed on `GET /api/movies`, whose response shape is unchanged) and extracted `_series_imdb_url()` out of `_build_series_response` (now shared with the series save path); added `_movie_save_fields`/`_series_save_fields`/`_news_save_fields`/`_design_save_fields` (FR-096 per-type mapping), `_get_or_create_saved_entry` (idempotent get-or-create, the first such helper in this codebase), `_saved_entry_to_dict`, and `_saved_source_ids` (one query per list request feeding `is_saved`); added the four `POST .../save` handlers next to their sibling read/follow endpoints; added `is_saved` to `_movie_to_dict`, `_build_series_response`, and the News/Design item dict literals; added `GET /api/saved`, `DELETE /api/saved/{id}`, `GET /api/saved/export`; extended `serve_spa_route` with `/saved`
+- `src/webui/static/app.js` — added shared `SaveButton` component (loading state + fetch + `onSave` callback that flips `is_saved` in place rather than removing the item, unlike every existing action button); wired into `MovieCard` (`.movie-actions`), the `SeriesTab` title row (unconditionally, not gated by `category` — the one row-level action that isn't), `NewsItemRow` (`.news-item-header`), and `DesignItemCard` (`.design-actions`), each with a matching `handleSaveEntry` state updater in its parent tab component; added `SavedTab` component (fetch on mount, Remove via `DELETE`, Export via `window.location.href`); added `"saved"` to `TABS`, a 5th tab button, and the `SavedTab` dispatch branch in `App()`
+- `src/webui/static/styles.css` — added `.btn-save`/`.btn-saved` (modeled on `.btn-keep`/`.btn-keep-active`), `.series-save-btn` (distinct from `.series-ignore-btn` since Save isn't category-gated), and `.saved-summary`; the Saved tab's list otherwise reuses `.news-list`/`.news-item`/`.news-item-header`/`.empty-state` as-is
+- `tools/migrate_008_saved_entries.sh` — new idempotent migration creating the `saved_entries` table on an existing (already-deployed) DB, for anyone who doesn't want to wait for the next `create_all()`-on-startup
 
 ### Key decisions (ADR-017)
 - One common `saved_entries` table across all four content types, not four separate per-type "saved" tables — matches the user's explicit ask for "a common format" and keeps the Saved tab a single flat list/export without a union query across four schemas
@@ -490,8 +491,8 @@ No markup, sorting, or grouping logic changes — pure CSS density pass.
 - Saved tab with zero entries → valid empty state, Export still works (returns `entries: []`)
 
 ### Migration steps (M16)
-- Fresh DB: `create_all()` on startup creates `saved_entries` automatically
-- Existing DB: `saved_entries` does not exist yet — `create_all()` adds it automatically on next startup (additive, no existing table touched); no data backfill needed since there's nothing to migrate from
+- Fresh DB: `create_all()` on startup creates `saved_entries` automatically — no manual step needed
+- Existing DB (deployed instance, don't want to wait for the next app startup): `bash tools/migrate_008_saved_entries.sh` — creates `saved_entries` (with `ux_saved_entries_source` and `ix_saved_entries_saved_at`) via `SavedEntry.__table__.create(engine, checkfirst=True)` rather than hand-written `CREATE TABLE` SQL, so it's correct for both MySQL and SQLite from the model definition and needs no dialect branching. Idempotent — re-running after the table already exists (including one created by `create_all()` itself) is a no-op. No data backfill — brand-new table, nothing to migrate from. Verified against the live MySQL dev DB (drop → run → schema/indexes confirmed correct → re-run confirmed no-op) and against a fresh SQLite file (create + idempotent re-run, both confirmed via direct `SavedEntry.__table__.create()` calls matching what the script does).
 
 ### How to test locally (M16)
 1. Start the web app; open Movies, Series, News, and Design tabs — confirm every item/row shows a "Save Entry" button alongside its existing actions, regardless of Read/Unread (or Series category) state
@@ -503,3 +504,5 @@ No markup, sorting, or grouping logic changes — pure CSS density pass.
 7. Click "Export" on the Saved tab — confirm a JSON file downloads containing every remaining saved entry
 8. Confirm the Movies/Series/News/Design source rows themselves are unaffected by any Save/Remove action (read status, category, etc. unchanged)
 9. Visit `/saved` directly — confirm it loads with the Saved tab active
+
+**Verified:** steps 1-2 and 5-9 above were run directly against the API (`curl`) on the live MySQL dev DB — one real item of each of the four types was saved, `is_saved` confirmed `true` on a fresh `GET` (not just the save response), a second save on the same id confirmed idempotent (same `saved_entries.id`, single DB row via direct query), `GET /api/saved` returned all four grouped correctly (most-recent-first), `DELETE /api/saved/{id}` removed each and flipped the source item's `is_saved` back to `false` on the next `GET`, `GET /api/saved/export` returned a valid download (including the empty-list case after cleanup) with the `"Saved export: N items"` log line, `GET /saved` returned 200, and 404s were confirmed on all four save endpoints plus delete for a nonexistent id. Source rows' `is_read`/`is_following`/`is_ignored` were confirmed unchanged by direct DB query before/after. All test data was cleaned up afterward (`saved_entries` empty, matching pre-test state). **Not verified in this pass:** the actual React UI in a browser (button rendering/disabled-state styling, click interactions, tab navigation) — this environment has no GUI browser available, so the frontend was verified by code review and JS syntax check (`node --check`) only, not a live click-through.

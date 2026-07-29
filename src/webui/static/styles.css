@@ -649,6 +649,37 @@ body {
     border: 1px solid var(--green);
 }
 
+/* Save Entry button (ADR-017) — same inactive/active-done shape as .btn-keep/.btn-keep-active */
+.btn-save {
+    background-color: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+}
+
+.btn-save:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.btn-saved {
+    background-color: rgba(46, 204, 113, 0.15);
+    color: var(--green);
+    border: 1px solid var(--green);
+    cursor: not-allowed;
+}
+
+.series-save-btn {
+    margin-left: 0.5rem;
+    font-size: 0.75rem;
+}
+
+.saved-summary {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    line-height: 1.5;
+    margin: 0.3rem 0 0.4rem;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .movie-grid {

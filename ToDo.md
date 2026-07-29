@@ -1,10 +1,9 @@
 ## ToDo
 
-1. I need a way to save the data from an rss entry (title, link, date, feed name & summary). It should go into a different table with a common format, but it can get saved from any type of feed. These should go into a separate view (saved), which can be exported as currently News allow exporting. We need to add this to all feeds, as another button like "mark read". This new button should read "save entry".
-2. In News, each day should have a "Mark as Read" button which only applies to that day. The name will be different, "Mark day as Read".
-3. Need to find a way to import marked as "to follow" from previous system, and need to find a way to do the same in the new system. Could be a different system that runs on a separate cron. So we create a list of links to the articles, and then the other system goes to process them. Or just collect them and I can pull the list to use in a different system.
-4. The export in News should apply to the view, not only unread. Any view should be exportable.
-5. The movies feed of the source (article link) should be the link of the title. The current IMDB link of the title needs to go to the IMDB with text with class "rating". So in efect, the IMDB rating links to the IMDB page.
+1. In News, each day should have a "Mark as Read" button which only applies to that day. The name will be different, "Mark day as Read".
+2. Need to find a way to import marked as "to follow" from previous system, and need to find a way to do the same in the new system. Could be a different system that runs on a separate cron. So we create a list of links to the articles, and then the other system goes to process them. Or just collect them and I can pull the list to use in a different system.
+3. The export in News should apply to the view, not only unread. Any view should be exportable.
+4. The movies feed of the source (article link) should be the link of the title. The current IMDB link of the title needs to go to the IMDB with text with class "rating". So in efect, the IMDB rating links to the IMDB page.
 
 ## ToDo later
 

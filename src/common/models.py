@@ -11,7 +11,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-__all__ = ["Base", "Movie", "Series", "SeriesEpisode", "FeedHealth", "NewsItem", "Filter", "AIFilteredView", "DesignItem", "hash_url"]
+__all__ = ["Base", "Movie", "Series", "SeriesEpisode", "FeedHealth", "NewsItem", "Filter", "AIFilteredView", "DesignItem", "SavedEntry", "hash_url"]
 
 
 def hash_url(url: str) -> str:
@@ -199,3 +199,26 @@ class AIFilteredView(Base):
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     keep_as_context: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     ingested_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class SavedEntry(Base):
+    """A common-format snapshot copied from a Movie/Series/NewsItem/DesignItem
+    row on Save Entry click (ADR-017). No FK — source_type+source_id spans
+    four different parent tables; validated at the application layer only,
+    at save time (V-041)."""
+
+    __tablename__ = "saved_entries"
+    __table_args__ = (
+        Index("ux_saved_entries_source", "source_type", "source_id", unique=True),
+        Index("ix_saved_entries_saved_at", "saved_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    source_type: Mapped[str] = mapped_column(String(20), nullable=False)  # "movie" | "series" | "news" | "design"
+    source_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    link: Mapped[str] = mapped_column(Text, nullable=False)
+    entry_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    feed_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    saved_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
