@@ -2,7 +2,7 @@
 
 ## Scope implemented
 
-All milestones M1–M10 are implemented and running in production. M11 (Design Feed) is documented and awaiting implementation.
+All milestones M1–M10 and M12–M15 are implemented and running in production. M11 (Design Feed) is documented and awaiting implementation. M16 (Saved Entries) is documented and awaiting implementation.
 
 - **M1 — Ingestion:** CLI ingester, RSS fetch/parse, dedup, storage
 - **M2 — Enrichment:** On-demand OMDb enrichment via web UI; stores `imdb_id` for direct linking
@@ -451,3 +451,55 @@ No markup, sorting, or grouping logic changes — pure CSS density pass.
 5. Visit an old-style `/news/{feed_name}` link — confirms it falls back to the default tag/feed instead of erroring or 404ing
 6. Browser back/forward across tag and feed changes — confirms `popstate` restores the right tag+feed combination
 7. Confirm Design tab is unaffected — still a flat feed picker, `/design/{feed_name}` unchanged
+
+---
+
+## M16 — Saved Entries (ADR-017) (Planned)
+
+### Scope
+- Feature request: a cross-feed "bookmark" mechanism — save any item from any of the four content tabs into one common-format table, browsable and exportable from a new Saved tab
+- Fully specified during the docs pass before any code was written: FR-095–FR-103, AC-044–AC-050, Data-Contracts.md's `SavedEntry` schema/API contracts, and ADR-017 (records the single-common-table decision, the per-source-type field mapping, and the rejected alternatives)
+- New `saved_entries` table + SQLAlchemy model
+- New "Save Entry" action on every item: `POST /api/movies/{id}/save`, `POST /api/series/{series_id}/save` (title-level, not per-episode), `POST /api/news/items/{id}/save`, `POST /api/design/items/{id}/save` — all idempotent on `(source_type, source_id)`
+- `is_saved` added to every existing list endpoint's item shape (`GET /api/movies`, `GET /api/series`, `GET /api/news/{feed_name}/items`, `GET /api/design/{feed_name}/items`)
+- New `GET /api/saved`, `DELETE /api/saved/{id}`, `GET /api/saved/export` endpoints
+- New Saved tab in the React frontend: flat list ordered by `saved_at` descending, "Remove from Saved" per row, "Export" button; new `/saved` route
+- No CLI/ingester or Filter Processor changes — this is Web UI-only, populated by user action, not by ingestion
+
+### Files to touch
+- `src/common/models.py` — add `SavedEntry` model + `hash`-free unique index on `(source_type, source_id)`
+- `src/webui/routes.py` — add `_movie_to_saved_dict`/etc. mapping helpers (FR-096); add the four `POST .../save` handlers; add `is_saved` computation (single query against `saved_entries` per list request, joined/filtered by `source_type`) to `get_movies`, `get_series`, `get_news_items`, `get_design_items`; add `GET /api/saved`, `DELETE /api/saved/{id}`, `GET /api/saved/export`; extend `serve_spa_route` with `/saved`
+- `src/webui/static/app.js` — add "Save Entry" button to `MovieCard`, series title row, `NewsItemRow`, design card; new `SavedTab` component; `parseLocation()`/tab-bar updated for `/saved`
+- `src/webui/static/styles.css` — new `.save-entry-btn`/`.saved-badge` (or similar) rules for the button's active vs. disabled/"Saved" states; new `.saved-list`/`.saved-item` rules for the flat Saved-tab list (can likely reuse `.news-item` patterns)
+
+### Key decisions (ADR-017)
+- One common `saved_entries` table across all four content types, not four separate per-type "saved" tables — matches the user's explicit ask for "a common format" and keeps the Saved tab a single flat list/export without a union query across four schemas
+- `source_type` + `source_id` instead of a real FK — a single FK can't span four different parent tables; validity of `source_id` is checked at the application layer only, at save time
+- Series saves at the **title level**, not per-episode — mirrors Follow/Ignore's granularity (series-level actions), avoids ambiguity over "which quality variant" a per-episode save would need to carry
+- `link` for Movies/Series is the IMDb URL (reusing the exact value already computed for the title link), not a torrent/episode URL — points to a durable webpage rather than a torrent file, and sidesteps the "which quality variant" problem entirely
+- `feed_name` for Movies/Series is a fixed string (`"Movies"`/`"Series"`) rather than sourced from config, since neither content type has a per-item config-driven feed name the way News/Design do
+- Idempotent on `(source_type, source_id)`, not `(source_type, link)` — simpler, exact, and doesn't require re-hashing a URL; the frontend already has the source id on hand when rendering the button
+- No read/unread tracking on `saved_entries` — Saved is a flat curated list; the only lifecycle action is Remove (delete), keeping the feature intentionally lightweight rather than duplicating the News/Design read-tracking pattern
+- Saved export always includes every row (no unread-only filtering like the News export) — there's no read state to filter by, and the list is expected to stay small since Remove is available
+
+### Edge cases to handle
+- Save request for a `source_id` that doesn't exist (e.g. stale frontend state) → 404, no row created
+- Save request for an already-saved `(source_type, source_id)` → return the existing row unchanged, no duplicate insert (V-043)
+- Movie/Series with null `plot`/no synopsis → `summary` stored as empty string, never null (matches the FR-096 mapping)
+- Remove from Saved on an already-removed `id` (e.g. double-click) → 404 is acceptable; frontend should already have removed the row from view after the first successful call
+- Saved tab with zero entries → valid empty state, Export still works (returns `entries: []`)
+
+### Migration steps (M16)
+- Fresh DB: `create_all()` on startup creates `saved_entries` automatically
+- Existing DB: `saved_entries` does not exist yet — `create_all()` adds it automatically on next startup (additive, no existing table touched); no data backfill needed since there's nothing to migrate from
+
+### How to test locally (M16)
+1. Start the web app; open Movies, Series, News, and Design tabs — confirm every item/row shows a "Save Entry" button alongside its existing actions, regardless of Read/Unread (or Series category) state
+2. Click "Save Entry" on one item of each type — confirm the button immediately becomes a disabled "Saved" state with no page reload
+3. Reload the page — confirm the same items still show "Saved" (driven by `is_saved` in the list response, not just client-side click state)
+4. Open the Saved tab — confirm all four saved items appear together in one flat list, most-recently-saved first, with no read/unread or filter toggle
+5. Click "Save Entry" again on an already-saved item (e.g. via a direct API call) — confirm no duplicate row appears in the Saved tab
+6. Click "Remove from Saved" on one entry — confirm it disappears from the Saved tab immediately, and its button on the original tab (Movies/Series/News/Design) becomes clickable again after a refetch
+7. Click "Export" on the Saved tab — confirm a JSON file downloads containing every remaining saved entry
+8. Confirm the Movies/Series/News/Design source rows themselves are unaffected by any Save/Remove action (read status, category, etc. unchanged)
+9. Visit `/saved` directly — confirm it loads with the Saved tab active

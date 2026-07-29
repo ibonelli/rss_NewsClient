@@ -4,6 +4,7 @@
 - The system shall automatically ingest movie data from the YTS RSS feed and news from configurable RSS/Atom news feeds, provide on-demand rating enrichment for movies, and serve a filterable, read-tracked web-based view grouped appropriately for each content type. All news feeds expose a JSON export/import workflow so an external tool can classify items without any direct AI integration inside the application.
 - The system shall also ingest TV series episode data from the EZTV RSS feed, parse season/episode identifiers, group quality variants, and serve a browsable Series tab with the same read-tracking pattern as movies.
 - The system shall ingest articles from configurable design RSS feeds (e.g., Designboom), extracting title, summary, and image, and serve them in a dedicated Design tab with card-style layout and read/unread tracking.
+- The system shall let the user save any item from any of the four content tabs (Movies, Series, News, Design) into a single common-format "Saved" store, independent of read/unread state, browsable and exportable from a dedicated Saved tab.
 
 ## 2) Personas / Users
 - Persona A: Self (sole user) — wants to discover quality movies, track TV series episodes, read relevant news, and browse design inspiration without manual browsing
@@ -134,6 +135,21 @@
 - **FR-077:** Clicking a tab or selecting a News/Design sub-feed MUST update the browser URL to match (without a full page reload), and browser back/forward MUST restore the previously active tab/feed. Visiting an unrecognized path MUST fall back to the Movies tab.
 - **FR-094:** The News tab's deep-link route MUST extend to a tag-scoped, three-segment form: `/news/{tag}/{feed_name}` (specific feed within a tag) and `/news/{tag}` (tag tab active, first feed under it auto-selected, per FR-092). The previous two-segment `/news/{feed_name}` form (FR-076) is no longer a valid News route. No redirect/alias is provided for old two-segment links — visiting one (or any other unrecognized News path) MUST fall back to the News tab's own default (first tag per FR-091, first feed within it), consistent with the general unrecognized-path handling in FR-077. `design_feeds` / `/design/{feed_name}` are unaffected — this change applies to News only.
 
+### Saved Entries (Cross-Feed)
+- **FR-095:** The web application MUST provide a "Save Entry" action, available on every item across all four content tabs (Movies, Series — at the series-title level, not per-episode — News, Design), that copies a common-format snapshot of the item into a dedicated `saved_entries` table. Saving is independent of the item's read/unread state (or, for Series, its Inbox/OnGoing/Following/Ignored category) — it does not alter either.
+- **FR-096:** Each `saved_entries` row MUST store: `source_type` (`movie`\|`series`\|`news`\|`design`), `source_id` (the originating row's id in its own table), `title`, `link`, `entry_date` (nullable), `feed_name`, `summary`, and `saved_at` (auto-set on insert). Field mapping per source type:
+  - **Movies:** `link` = the same IMDb URL used for the movie title link (FR-038) — direct `imdb_id` link if known, else IMDb title-search; `entry_date` = `Movie.feed_entry_date`; `feed_name` = fixed string `"Movies"`; `summary` = `Movie.plot` (empty string if null).
+  - **Series:** `link` = the same IMDb URL used for the series title link (FR-045); `entry_date` = the `series` row's `created_at` (no single per-series feed date exists — episode dates live on `series_episodes`); `feed_name` = fixed string `"Series"`; `summary` = empty string (no synopsis data available for series).
+  - **News:** `link` = `NewsItem.url`; `entry_date` = `NewsItem.published_at`; `feed_name` = `NewsItem.feed_name`; `summary` = `NewsItem.full_content`.
+  - **Design:** `link` = `DesignItem.url`; `entry_date` = `DesignItem.published_at`; `feed_name` = `DesignItem.feed_name`; `summary` = `DesignItem.summary`.
+- **FR-097:** Saving MUST be idempotent, keyed on `(source_type, source_id)`. Clicking "Save Entry" on an item that is already saved MUST NOT create a duplicate `saved_entries` row — the API returns the existing row.
+- **FR-098:** `GET /api/movies`, `GET /api/series`, `GET /api/news/{feed_name}/items`, and `GET /api/design/{feed_name}/items` MUST each include an `is_saved` boolean per returned item (or per series, for Series), computed via lookup against `saved_entries` by `(source_type, source_id)`, so the frontend can render each item's "Save Entry" button state correctly on initial load, not only immediately after a click.
+- **FR-099:** The "Save Entry" button MUST be visible regardless of the item's current read/unread view (or Series category). Once saved, the button MUST render as a disabled/inert "Saved" state rather than disappearing from the row.
+- **FR-100:** The web application MUST provide a "Saved" tab, distinct from Movies/Series/News/Design, listing all `saved_entries` rows as a single flat list ordered by `saved_at` descending (most recently saved first) — mixing items from all four source types together, with no read/unread toggle and no filter/category toggle.
+- **FR-101:** The Saved tab MUST provide a "Remove from Saved" action per row (`DELETE /api/saved/{id}`) that deletes the row from `saved_entries` immediately, persisted, and does not alter the original source row (Movie/Series/News/Design) in any way.
+- **FR-102:** The Saved tab MUST provide an "Export" button (`GET /api/saved/export`) that downloads a JSON file containing every row currently in `saved_entries` — no read/unread filtering applies (Saved has no read state), unlike the unread-only News export (FR-033).
+- **FR-103:** The Saved tab MUST be reachable via a bookmarkable URL `/saved`, following the same routing pattern as the other four tabs (FR-075).
+
 ### Export (All News Feeds)
 - **FR-033:** The web application MUST expose `GET /api/news/{feed}/export` for any configured news feed, returning a downloadable JSON file containing only `unread_items` (all `news_items` rows for that feed where `is_read = false`). Each item MUST include its `news_items.id`, title, URL, publication date, and content.
 - ~~**FR-034:** Removed — the import endpoint (`POST /api/news/{feed}/import`) is no longer provided.~~
@@ -177,6 +193,7 @@
 - **News — feed grouping:** `tag` (single string, default `"General"` when unset) lives only in `config.yaml` on each `news_feeds` entry, alongside a `news_tag_priority` ordered list — not a DB column, not stored per `news_items` row (FR-090, FR-091)
 - **News — `ai_filtered_views`:** legacy table retained on disk; no longer written or read by the application
 - **Design — `design_items`:** title, article URL, publication date (nullable), source feed name, summary (plain text), image URL (nullable), ingestion timestamp, read status
+- **Saved — `saved_entries` (common format across all four content types):** source_type, source_id, title, link, entry_date (nullable), feed_name, summary, saved_at. Unique on `(source_type, source_id)` — see FR-095–FR-096 for per-type field mapping.
 - Retention: indefinite (database on disk)
 - PII classification: None
 
@@ -231,6 +248,14 @@
 - **AC-024:** "Mark All Read" on the Unread view clears all unread items for the selected feed; no export button is present.
 - **AC-025:** An email alert fires if any configured design feed is unreachable for >24 hours.
 - **AC-026:** Multiple design feeds configured in `config.yaml` are all ingested and selectable in the Design tab independently.
+
+- **AC-044:** Clicking "Save Entry" on a Movie, Series (title-level), News item, or Design item creates a `saved_entries` row with the field mapping defined in FR-096 for that source type; the button becomes disabled/"Saved" immediately, without a page reload.
+- **AC-045:** Reloading or re-fetching a source list (Movies/Series/News/Design) shows a previously saved item's button already in the "Saved" state, driven by `is_saved` in the API response (FR-098).
+- **AC-046:** Clicking "Save Entry" a second time on the same item (e.g. across two separate page loads) does not create a second `saved_entries` row — the `(source_type, source_id)` uniqueness holds (FR-097).
+- **AC-047:** The Saved tab shows items from all four source types together in one flat list, most-recently-saved first, with no read/unread toggle and no category/filter toggle.
+- **AC-048:** Clicking "Remove from Saved" deletes the row from `saved_entries` and removes it from the Saved view immediately; the original Movie/Series/News/Design row is untouched, and that item's "Save Entry" button becomes clickable again the next time its list is fetched (`is_saved` recomputed as `false`).
+- **AC-049:** Clicking "Export" on the Saved tab downloads a JSON file containing every currently saved entry, regardless of when each was saved.
+- **AC-050:** Visiting `/saved` directly loads the app with the Saved tab active.
 
 ## 8) Open Questions
 - **Q-001:** Which free rating source is most reliable/complete for movies? (TMDb, OMDb free tier, imdbapi.dev, scraping?)

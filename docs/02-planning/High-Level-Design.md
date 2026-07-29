@@ -97,6 +97,13 @@
 16. User marks movies, series, or news as read → DB toggle
 17. User triggers movie enrichment → on-demand OMDb/TMDb API call
 
+**Saved entries (user-triggered, any of the four content tabs):**
+18. User clicks "Save Entry" on a Movie, Series (title-level), News item, or Design item → `POST /{type}/{id}/save` maps the source row into the common `saved_entries` format (FR-096) and inserts it, or returns the existing row if already saved (idempotent on `(source_type, source_id)`, FR-097)
+19. Every list endpoint (Movies/Series/News/Design) includes `is_saved` per item so the Save Entry button renders correctly on load, not only right after a click
+20. User opens the Saved tab → `GET /api/saved` returns all saved entries across all four types, most-recently-saved first
+21. User clicks "Remove from Saved" → `DELETE /api/saved/{id}` deletes the row; source item is untouched
+22. User clicks Export on the Saved tab → `GET /api/saved/export` → JSON download of every saved entry (no unread-only filtering, unlike the News export — Saved has no read state)
+
 **AI-filtered export/import (user-triggered via browser):**
 18. User clicks Export in News tab → `GET /api/news/{feed}/export` → JSON download with two sections: `unread_items` (news_items where is_read = false) and `context_items` (ai_filtered_views where keep_as_context = true)
 19. User runs exported JSON through external AI tool (outside the app)
@@ -175,6 +182,17 @@ ai_filtered_views
 ├── is_read (boolean, default false)
 ├── keep_as_context (boolean, default false)
 └── ingested_at (timestamp)
+
+saved_entries                              -- common format across all 4 content tabs, see ADR-017
+├── id (PK)
+├── source_type                            -- "movie" | "series" | "news" | "design"
+├── source_id                              -- id of the originating row (no FK — spans 4 tables)
+├── title
+├── link                                   -- per-type mapping, see FR-096
+├── entry_date (nullable)                  -- per-type mapping, see FR-096
+├── feed_name                              -- per-type mapping ("Movies"/"Series" fixed, or the news/design feed_name)
+├── summary                                -- per-type mapping, may be empty string
+└── saved_at (timestamp, auto-set)         -- drives default Saved-tab sort order
 ```
 
 ### Config File (Conceptual — YAML)
@@ -248,7 +266,7 @@ _(News feeds are grouped into tag tabs — `tag` is optional per entry, defaulti
 
 ## 5) Key Decisions
 
-- See ADR-001 (FastAPI web app), ADR-002 (SQLAlchemy), ADR-003 (on-demand enrichment), ADR-004 (React CDN), ADR-005 (src directory split), ADR-006 (process architecture), ADR-007 (two-table design), ADR-009 (export/import replaces Claude CLI — supersedes ADR-008)
+- See ADR-001 (FastAPI web app), ADR-002 (SQLAlchemy), ADR-003 (on-demand enrichment), ADR-004 (React CDN), ADR-005 (src directory split), ADR-006 (process architecture), ADR-007 (two-table design), ADR-009 (export/import replaces Claude CLI — supersedes ADR-008), ADR-017 (single common `saved_entries` table across all four content types)
 
 ## 6) Non-functional impacts
 

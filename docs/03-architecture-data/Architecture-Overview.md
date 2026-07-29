@@ -6,7 +6,7 @@
 |---|---|---|
 | **CLI Ingester** (`src/cli/main.py`) | Fetch all RSS/Atom feeds (movie + series + news + design), parse, deduplicate (movies and series), store raw data to `movies`, `series`, `series_episodes`, `news_items`, and `design_items`, update feed health | Cron-triggered process (runs and exits, step 1) |
 | **CLI Filter Processor** (`src/cli/filter.py`) | Sync `filters` table from config; for each `filtered` feed, regex-match `news_items` and set `matched_filter_id` on matches — never deletes rows | Cron-triggered process (runs and exits, step 2 — immediately after Ingester) |
-| **FastAPI Web UI** (`src/webui/main.py`) | JSON API for movies, series, news, and design (filtering, read-tracking, on-demand enrichment, export); static React frontend | Long-running local process (on-demand) |
+| **FastAPI Web UI** (`src/webui/main.py`) | JSON API for movies, series, news, design, and saved entries (filtering, read-tracking, on-demand enrichment, save/export); static React frontend | Long-running local process (on-demand) |
 | **Database** (MySQL/SQLite) | Persistent state for all data | Shared resource |
 | **Config file** (`config.yaml`) | Feed definitions, filter patterns, rating thresholds, connection strings | Shared resource (read by both processes) |
 
@@ -23,7 +23,7 @@ src/
 ├── webui/
 │   ├── main.py         # Uvicorn entry point
 │   ├── app.py          # FastAPI app factory + static file mounting
-│   ├── routes.py       # JSON API route handlers (movies, series, news)
+│   ├── routes.py       # JSON API route handlers (movies, series, news, design, saved)
 │   ├── filters.py      # Movie filtering + sorting logic
 │   ├── enrichment.py   # On-demand OMDb/TMDb enrichment
 │   └── static/
@@ -31,7 +31,7 @@ src/
 │       ├── app.js      # React components (JSX via Babel CDN)
 │       └── styles.css
 └── common/
-    ├── models.py       # SQLAlchemy models (all tables, shared; includes DesignItem)
+    ├── models.py       # SQLAlchemy models (all tables, shared; includes DesignItem, SavedEntry)
     ├── db.py           # Engine/session factory, init_db()
     └── config.py       # YAML config loading + validation (includes design_feeds)
 ```
@@ -59,6 +59,7 @@ src/
 | POST | `/api/movies/{id}/read` | Mark movie as read |
 | POST | `/api/movies/{id}/unread` | Mark movie as unread |
 | POST | `/api/movies/{id}/enrich` | Trigger on-demand rating enrichment |
+| POST | `/api/movies/{id}/save` | Save movie into `saved_entries` (idempotent) |
 | GET | `/api/health` | Feed health status for all feeds |
 | GET | `/static/*` | Static assets (JS, CSS) |
 
@@ -74,6 +75,7 @@ src/
 | POST | `/api/series/episodes/{episode_id}/read` | Mark episode as read |
 | POST | `/api/series/episodes/{episode_id}/unread` | Mark episode as unread |
 | POST | `/api/series/read-all` | Mark all unread episodes as read |
+| POST | `/api/series/{series_id}/save` | Save series (title-level) into `saved_entries` (idempotent) |
 
 **News**
 
@@ -83,6 +85,7 @@ src/
 | GET | `/api/news/{feed_name}/items` | Items for a feed filtered by `read` bool (default `false`); type determines source table |
 | POST | `/api/news/items/{id}/read` | Mark `news_items` row as read |
 | POST | `/api/news/items/{id}/unread` | Mark `news_items` row as unread |
+| POST | `/api/news/items/{id}/save` | Save news item into `saved_entries` (idempotent) |
 | GET | `/api/news/{feed_name}/export` | Download JSON with `unread_items` for the feed (FR-033) |
 
 **Design**
@@ -93,7 +96,16 @@ src/
 | GET | `/api/design/{feed_name}/items` | Items for a feed filtered by `read` bool (default `false`) |
 | POST | `/api/design/items/{id}/read` | Mark design item as read |
 | POST | `/api/design/items/{id}/unread` | Mark design item as unread |
+| POST | `/api/design/items/{id}/save` | Save design item into `saved_entries` (idempotent) |
 | POST | `/api/design/{feed_name}/read-all` | Mark all unread items for the feed as read |
+
+**Saved**
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/saved` | All `saved_entries` rows, ordered by `saved_at` descending — no read/category filtering |
+| DELETE | `/api/saved/{id}` | Remove a `saved_entries` row (un-save); does not touch the source row |
+| GET | `/api/saved/export` | Download JSON with every `saved_entries` row (FR-102) |
 
 ### Database Interface
 
@@ -103,7 +115,7 @@ All three processes connect via SQLAlchemy using `database.url` from `config.yam
 |---|---|---|
 | CLI Ingester | — | `movies`, `series`, `series_episodes`, `news_items`, `design_items`, `feed_health` |
 | CLI Filter Processor | `news_items`, `filters` | `filters` (sync), `news_items.matched_filter_id` |
-| FastAPI Web UI | `movies`, `series`, `series_episodes`, `news_items`, `design_items`, `feed_health`, `filters` | `movies.is_read`, `movies` (enrichment), `series.is_ignored`, `series.is_following`, `series_episodes.is_read`, `news_items.is_read`, `design_items.is_read` |
+| FastAPI Web UI | `movies`, `series`, `series_episodes`, `news_items`, `design_items`, `feed_health`, `filters`, `saved_entries` | `movies.is_read`, `movies` (enrichment), `series.is_ignored`, `series.is_following`, `series_episodes.is_read`, `news_items.is_read`, `design_items.is_read`, `saved_entries` (insert on Save Entry, delete on Remove from Saved) |
 
 **Concurrency:** SQLite has a single-writer limitation — acceptable since Ingester and Filter Processor run sequentially in the same cron chain, and web app writes are infrequent (read-tracking only). MySQL handles concurrent reads and writes without issue.
 

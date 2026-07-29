@@ -34,6 +34,10 @@
 - **Definition:** Legacy table retained in DB schema; no longer written or read by the application (see Change-Log M10).
 - **Owner:** None — application no longer writes or reads this table
 
+### SavedEntry
+- **Definition:** A common-format, decoupled snapshot copied from a Movie, Series (title-level), NewsItem, or DesignItem row when the user clicks "Save Entry". Not a live reference — a `saved_entries` row survives edits/deletes of its source row and is never updated after creation. See FR-095–FR-103.
+- **Owner:** Web UI (creates on Save Entry click; reads for the Saved tab and export; deletes on Remove from Saved)
+
 ## 2) Schema (SQLAlchemy Models)
 
 ### Movie
@@ -224,6 +228,40 @@ class DesignItem(Base):
 
 The `ai_filtered_views` table remains in the database schema but is no longer written or queried by the application. It is retained to avoid a destructive migration on existing installations.
 
+---
+
+### SavedEntry
+
+```python
+class SavedEntry(Base):
+    __tablename__ = "saved_entries"
+
+    id: int                    # PK, auto-increment
+    source_type: str           # NOT NULL — one of "movie", "series", "news", "design"
+    source_id: int             # NOT NULL — id of the originating row in movies/series/news_items/design_items
+    title: str                 # NOT NULL
+    link: str                  # NOT NULL — see per-type mapping below
+    entry_date: datetime | None # nullable — original publish/entry date, per-type mapping below
+    feed_name: str              # NOT NULL — see per-type mapping below
+    summary: str                 # NOT NULL, may be empty string
+    saved_at: datetime          # auto-set on insert — drives default Saved-tab sort order
+```
+
+**Per-`source_type` field mapping (FR-096):**
+
+| source_type | link | entry_date | feed_name | summary |
+|---|---|---|---|---|
+| `movie` | Movie's IMDb URL (direct if `imdb_id` known, else title-search — same value as the movie title link, FR-038) | `Movie.feed_entry_date` | `"Movies"` (fixed) | `Movie.plot` or `""` |
+| `series` | Series' IMDb URL (same value as the series title link, FR-045) | `Series.created_at` | `"Series"` (fixed) | `""` (no synopsis data for series) |
+| `news` | `NewsItem.url` | `NewsItem.published_at` | `NewsItem.feed_name` | `NewsItem.full_content` |
+| `design` | `DesignItem.url` | `DesignItem.published_at` | `DesignItem.feed_name` | `DesignItem.summary` |
+
+**Indexes:**
+- `ux_saved_entries_source` UNIQUE on `(source_type, source_id)` — idempotency key (FR-097); a save request for an already-saved `(source_type, source_id)` pair returns the existing row rather than inserting
+- `ix_saved_entries_saved_at` on `saved_at` — default Saved-tab sort (descending, most recent first)
+
+Saving is a one-time copy, not a live reference — `saved_entries` has no FK constraint to `movies`/`series`/`news_items`/`design_items` (it spans four different tables, so a single FK isn't possible; `source_type` + `source_id` is validated at the application layer at save time only). A saved row is unaffected by later changes to (or, hypothetically, deletion of) its source row.
+
 ### URL hash unique keys
 
 `Movie.torrent_url` (`VARCHAR(1000)`), `NewsItem.url` and `DesignItem.url`
@@ -288,6 +326,12 @@ the migration on an existing database.
 
 ~~### AIFilteredView (on import) — Removed~~
 ~~V-016 through V-020 are no longer applicable — the import endpoint has been removed.~~
+
+### SavedEntry (on save)
+- **V-040:** `source_type` MUST be one of `"movie"`, `"series"`, `"news"`, `"design"`.
+- **V-041:** `source_id` MUST reference an existing row of that `source_type` at the moment the save request is handled (404 if not found).
+- **V-042:** `title` and `link` MUST NOT be empty after mapping from the source row.
+- **V-043:** On save, check for an existing `saved_entries` row with the same `(source_type, source_id)`. If found, return it unchanged (idempotent, FR-097) — do not insert a duplicate and do not update the existing row's snapshot.
 
 ## 4) Compatibility Rules
 
@@ -438,6 +482,7 @@ Default (`read=false&flagged=true`): unread movies that pass the filter — same
 
 Movies with no ratings (unenriched) always pass the filter and appear in the Flagged (`flagged=true`) results.
 The Flagged/Un-Flagged split is computed at query time from config thresholds; no `is_flagged` column is stored in the DB.
+Each movie also includes `is_saved` — `true` if a `saved_entries` row exists with `(source_type="movie", source_id=movie.id)` (FR-098); not stored on `movies` itself, computed via lookup at query time.
 
 ```json
 {
@@ -468,7 +513,8 @@ The Flagged/Un-Flagged split is computed at query time from config thresholds; n
           "feed_entry_date": "2026-05-20T14:30:00Z",
           "enrichment_date": "2026-05-20T15:00:00Z",
           "enrichment_error": null,
-          "is_read": false
+          "is_read": false,
+          "is_saved": false
         }
       ]
     },
@@ -516,6 +562,24 @@ The Flagged/Un-Flagged split is computed at query time (same logic as `GET /api/
 
 On failure: same shape with all rating fields `null`, `imdb_id` `null`, and `enrichment_error` populated.
 
+### POST `/api/movies/{id}/save`
+
+Idempotent — creates a `saved_entries` row (`source_type="movie"`) per the FR-096 mapping, or returns the existing row if already saved (FR-097).
+
+```json
+{
+  "id": 8,
+  "source_type": "movie",
+  "source_id": 42,
+  "title": "Movie Name",
+  "link": "https://www.imdb.com/title/tt1234567/",
+  "entry_date": "2026-05-20T14:30:00Z",
+  "feed_name": "Movies",
+  "summary": "A meticulous jewel thief risks his flawless record...",
+  "saved_at": "2026-05-21T09:00:00Z"
+}
+```
+
 ### GET `/api/series`
 
 Query params:
@@ -542,6 +606,7 @@ The Only-Title/Full view mode (FR-089) is a purely client-side rendering choice 
       "imdb_url": "https://www.imdb.com/search/title/?title=Breaking+Bad&title_type=tv_series",
       "is_following": true,
       "is_ignored": false,
+      "is_saved": false,
       "seasons": [
         {
           "season": 1,
@@ -564,7 +629,7 @@ The Only-Title/Full view mode (FR-089) is a purely client-side rendering choice 
 }
 ```
 
-`imdb_url` uses `https://www.imdb.com/title/{imdb_id}/` when `imdb_id` is known; falls back to an IMDb title-search URL otherwise (ADR-010). `is_following`/`is_ignored` live only at the series level — episodes carry no category flag of their own.
+`imdb_url` uses `https://www.imdb.com/title/{imdb_id}/` when `imdb_id` is known; falls back to an IMDb title-search URL otherwise (ADR-010). `is_following`/`is_ignored` live only at the series level — episodes carry no category flag of their own. `is_saved` is likewise series-level only (Save Entry operates per series-title, not per-episode, FR-095) — `true` if a `saved_entries` row exists with `(source_type="series", source_id=series.id)`.
 
 ### POST `/api/series/{series_id}/follow`, `/unfollow`, `/ignore`, `/unignore`
 
@@ -576,6 +641,24 @@ All four set/clear `is_following` / `is_ignored` on the `series` row identified 
 
 ```json
 { "id": 1, "title": "Breaking Bad", "is_following": false, "is_ignored": true }
+```
+
+### POST `/api/series/{series_id}/save`
+
+Idempotent — creates a `saved_entries` row (`source_type="series"`) at the series-title level per the FR-096 mapping, or returns the existing row if already saved.
+
+```json
+{
+  "id": 9,
+  "source_type": "series",
+  "source_id": 1,
+  "title": "Breaking Bad",
+  "link": "https://www.imdb.com/search/title/?title=Breaking+Bad&title_type=tv_series",
+  "entry_date": "2026-04-01T08:00:00Z",
+  "feed_name": "Series",
+  "summary": "",
+  "saved_at": "2026-05-21T09:05:00Z"
+}
 ```
 
 ### POST `/api/series/episodes/{episode_id}/read` and `/api/series/episodes/{episode_id}/unread`
@@ -666,13 +749,14 @@ Returns items appropriate to the feed type, filtered by read state:
       "url": "https://openssl.org/news/...",
       "published_at": "2026-06-14T09:00:00Z",
       "is_read": false,
+      "is_saved": false,
       "matched_filter_name": "vulnerabilities"
     }
   ]
 }
 ```
 
-For `filtered` type, each item includes `matched_filter_name`. For `unfiltered`, this field is absent.
+For `filtered` type, each item includes `matched_filter_name`. For `unfiltered`, this field is absent. `is_saved` is `true` if a `saved_entries` row exists with `(source_type="news", source_id=item.id)` (FR-098).
 
 ~~**`GET /api/news/{feed_name}/raw` — Removed.**~~
 
@@ -680,6 +764,24 @@ For `filtered` type, each item includes `matched_filter_name`. For `unfiltered`,
 
 ```json
 { "id": 517, "is_read": true }
+```
+
+### POST `/api/news/items/{id}/save`
+
+Idempotent — creates a `saved_entries` row (`source_type="news"`) per the FR-096 mapping, or returns the existing row if already saved.
+
+```json
+{
+  "id": 10,
+  "source_type": "news",
+  "source_id": 517,
+  "title": "Critical OpenSSL CVE patched in 3.4.1",
+  "link": "https://openssl.org/news/...",
+  "entry_date": "2026-06-14T09:00:00Z",
+  "feed_name": "Security",
+  "summary": "Full article text — not truncated.",
+  "saved_at": "2026-06-15T10:00:00Z"
+}
 ```
 
 ~~**`POST /api/news/views/{id}/read` and `/api/news/views/{id}/unread` — Removed.** The `ai_filtered` feed type has been eliminated.~~
@@ -729,13 +831,14 @@ Query params:
       "published_at": "2026-06-29T10:00:00Z",
       "summary": "Dutch design studio Drift presents a new kinetic sculpture...",
       "image_url": "https://www.designboom.com/wp-content/uploads/...",
-      "is_read": false
+      "is_read": false,
+      "is_saved": false
     }
   ]
 }
 ```
 
-`image_url` is `null` when no image was found in the feed entry (FR-063).
+`image_url` is `null` when no image was found in the feed entry (FR-063). `is_saved` is `true` if a `saved_entries` row exists with `(source_type="design", source_id=item.id)` (FR-098).
 
 ### POST `/api/design/items/{id}/read` and `/api/design/items/{id}/unread`
 
@@ -745,6 +848,24 @@ Sets `is_read` on a `design_items` row.
 { "id": 1, "is_read": true }
 ```
 
+### POST `/api/design/items/{id}/save`
+
+Idempotent — creates a `saved_entries` row (`source_type="design"`) per the FR-096 mapping, or returns the existing row if already saved.
+
+```json
+{
+  "id": 11,
+  "source_type": "design",
+  "source_id": 1,
+  "title": "Studio Drift's kinetic installation at Design Miami",
+  "link": "https://www.designboom.com/art/studio-drift-...",
+  "entry_date": "2026-06-29T10:00:00Z",
+  "feed_name": "Designboom",
+  "summary": "Dutch design studio Drift presents a new kinetic sculpture...",
+  "saved_at": "2026-06-30T08:00:00Z"
+}
+```
+
 ### POST `/api/design/{feed_name}/read-all`
 
 Marks all unread `design_items` for the feed as read. Only called from the Unread toggle state.
@@ -752,6 +873,62 @@ Marks all unread `design_items` for the feed as read. Only called from the Unrea
 ```json
 { "marked_read": 15 }
 ```
+
+### GET `/api/saved`
+
+Returns every `saved_entries` row, ordered by `saved_at` descending (most recently saved first). No query params — Saved has no read/unread or category filtering (FR-100).
+
+```json
+{
+  "entries": [
+    {
+      "id": 11,
+      "source_type": "design",
+      "source_id": 1,
+      "title": "Studio Drift's kinetic installation at Design Miami",
+      "link": "https://www.designboom.com/art/studio-drift-...",
+      "entry_date": "2026-06-29T10:00:00Z",
+      "feed_name": "Designboom",
+      "summary": "Dutch design studio Drift presents a new kinetic sculpture...",
+      "saved_at": "2026-06-30T08:00:00Z"
+    }
+  ],
+  "total_count": 1
+}
+```
+
+### DELETE `/api/saved/{id}`
+
+Deletes a `saved_entries` row by its own `id` (un-save). Does not touch the original source row. `id` here is the `saved_entries` primary key, not `source_id` (FR-101).
+
+```json
+{ "ok": true }
+```
+
+### GET `/api/saved/export`
+
+Returns `Content-Disposition: attachment; filename="saved-export.json"`. Includes every `saved_entries` row — no read/unread filtering applies (FR-102).
+
+```json
+{
+  "exported_at": "2026-06-30T09:00:00Z",
+  "entries": [
+    {
+      "id": 11,
+      "source_type": "design",
+      "source_id": 1,
+      "title": "Studio Drift's kinetic installation at Design Miami",
+      "link": "https://www.designboom.com/art/studio-drift-...",
+      "entry_date": "2026-06-29T10:00:00Z",
+      "feed_name": "Designboom",
+      "summary": "Dutch design studio Drift presents a new kinetic sculpture...",
+      "saved_at": "2026-06-30T08:00:00Z"
+    }
+  ]
+}
+```
+
+Log: `"Saved export: N items"` (NFR-006 — same export-observability pattern as News).
 
 ### Error Responses (All Endpoints)
 

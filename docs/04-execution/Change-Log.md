@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Added — M16: Saved Entries (ADR-017) (Planned)
+- New `saved_entries` table: common format across all four content tabs (Movies, Series, News, Design) — `source_type`, `source_id`, `title`, `link`, `entry_date`, `feed_name`, `summary`, `saved_at`; unique on `(source_type, source_id)` for idempotent saving
+- New "Save Entry" button on every item row (Movies, Series — at the series-title level, not per-episode — News, Design), alongside the existing Mark Read/Follow/Ignore actions; visible regardless of read/unread or category state; becomes a disabled "Saved" state once clicked
+- New endpoints: `POST /api/movies/{id}/save`, `POST /api/series/{series_id}/save`, `POST /api/news/items/{id}/save`, `POST /api/design/items/{id}/save` — all idempotent on `(source_type, source_id)`
+- `GET /api/movies`, `GET /api/series`, `GET /api/news/{feed_name}/items`, `GET /api/design/{feed_name}/items` each gain an `is_saved` boolean per item so the button reflects prior saves on load, not only right after a click
+- New "Saved" tab: flat list of all saved entries across all four types, ordered most-recently-saved first; no read/unread toggle, no category/filter toggle — a "Remove from Saved" action per row (`DELETE /api/saved/{id}`) and an "Export" button (`GET /api/saved/export`, dumps every saved row — no unread-only filtering, unlike the News export)
+- New bookmarkable route `/saved`, following the existing per-tab URL pattern (FR-075)
+- No changes to the CLI Ingester or Filter Processor — Saved is entirely a Web UI feature, populated only by user action
+- Fully specified during the docs pass before any code was written: FR-095–FR-103, AC-044–AC-050, Data-Contracts.md's `SavedEntry` schema/API contracts, and ADR-017 (records the single-common-table decision and the per-type field mapping tradeoffs)
+- See FR-095–FR-103, AC-044–AC-050
+
 ### Added — M15: News Feed Tag-Grouping (ADR-016)
 - Each `news_feeds` config entry gains an optional `tag` field (defaults to `"General"` if unset); a new `news_tag_priority` config list (mirrors the existing `genre_priority`) orders tag tabs left-to-right, with any tag not listed there appended after, in first-appearance order
 - `GET /api/news` (`routes.py:get_news_feeds`) now returns each feed's `tag` and pre-sorts the whole array into tag-priority order — the client groups this already-ordered array by `tag` rather than re-deriving order itself
