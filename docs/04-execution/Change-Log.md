@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Changed — M18: News Export Follows Active View
+- `GET /api/news/{feed_name}/export` now takes a `read=<bool>` query param (default `false`) and returns items matching that state, instead of always exporting unread — mirrors `GET /api/news/{feed_name}/items?read=<bool>` exactly, including a `matched_filter_id IS NOT NULL` restriction for `filtered`-type feeds (previously missing, a pre-existing gap fixed as part of this change)
+- Export JSON payload: `unread_items` key renamed to `items`, plus a new `is_read` field — safe since the import feature that once consumed this format was removed in M9 (ADR-009)
+- News tab's Export button relabeled from "Export Unread" to "Export View", downloading whichever Unread/Read toggle is currently active
+- No DB schema change, no CLI/ingester change
+- See FR-033, FR-035, FR-102, AC-009
+
 ### Added — M17: Mark Day as Read (News)
 - New per-date-section "Mark day as Read" button on every News feed view, alongside the existing feed-wide "Mark All Read" — marks only the items in that date group (including the trailing "Unknown date" group) as read and removes them from view; visible only on the Unread toggle
 - New endpoint `POST /api/news/{feed_name}/read-day` accepting `{"item_ids": [...]}`, scoped by `feed_name` and only affecting currently-unread ids in that feed

@@ -147,14 +147,14 @@
 - **FR-099:** The "Save Entry" button MUST be visible regardless of the item's current read/unread view (or Series category). Once saved, the button MUST render as a disabled/inert "Saved" state rather than disappearing from the row.
 - **FR-100:** The web application MUST provide a "Saved" tab, distinct from Movies/Series/News/Design, listing all `saved_entries` rows as a single flat list ordered by `saved_at` descending (most recently saved first) — mixing items from all four source types together, with no read/unread toggle and no filter/category toggle.
 - **FR-101:** The Saved tab MUST provide a "Remove from Saved" action per row (`DELETE /api/saved/{id}`) that deletes the row from `saved_entries` immediately, persisted, and does not alter the original source row (Movie/Series/News/Design) in any way.
-- **FR-102:** The Saved tab MUST provide an "Export" button (`GET /api/saved/export`) that downloads a JSON file containing every row currently in `saved_entries` — no read/unread filtering applies (Saved has no read state), unlike the unread-only News export (FR-033).
+- **FR-102:** The Saved tab MUST provide an "Export" button (`GET /api/saved/export`) that downloads a JSON file containing every row currently in `saved_entries` — no read/unread filtering applies (Saved has no read state), unlike the News export, which is scoped to whichever read/unread view is active (FR-033).
 - **FR-103:** The Saved tab MUST be reachable via a bookmarkable URL `/saved`, following the same routing pattern as the other four tabs (FR-075).
 - **FR-104:** Every News tab date-section header (produced by the existing date grouping, including the trailing "Unknown date" group for undated items) MUST provide a "Mark day as Read" button when the **Unread** toggle is active. It marks only the items within that date group as read (`POST /api/news/{feed_name}/read-day`) and removes them from view; other date sections, and other feeds, are unaffected. The button MUST NOT appear when the Read toggle is active.
 
 ### Export (All News Feeds)
-- **FR-033:** The web application MUST expose `GET /api/news/{feed}/export` for any configured news feed, returning a downloadable JSON file containing only `unread_items` (all `news_items` rows for that feed where `is_read = false`). Each item MUST include its `news_items.id`, title, URL, publication date, and content.
+- **FR-033:** The web application MUST expose `GET /api/news/{feed}/export?read=<bool>` for any configured news feed, returning a downloadable JSON file containing the `news_items` rows for that feed matching the given `read` state (default `false`, i.e. unread) — mirroring exactly what `GET /api/news/{feed}/items?read=<bool>` returns for the same feed, including the `matched_filter_id IS NOT NULL` restriction for `filtered`-type feeds. Each item MUST include its `news_items.id`, title, URL, publication date, and content.
 - ~~**FR-034:** Removed — the import endpoint (`POST /api/news/{feed}/import`) is no longer provided.~~
-- **FR-035:** The News tab MUST provide an **Export Unread** button on every news feed view. There is no Import control.
+- **FR-035:** The News tab MUST provide an **Export View** button on every news feed view, functional on both the Unread and Read toggle states, downloading whichever state is currently active. There is no Import control.
 - ~~**FR-036:** Removed — no import UI control.~~
 
 ### Web Application — Movie View Controls
@@ -212,7 +212,7 @@
 - **AC-006:** Movies have enriched ratings from at least one external source.
 - **AC-007:** Unfiltered news feeds store all fetched items; read/unread status survives app restart.
 - **AC-008:** Filtered news feeds store all items; only items with a non-null `matched_filter` appear in the News tab, with the filter name displayed.
-- **AC-009:** For any news feed, clicking Export downloads a JSON file containing unread `news_items` rows. No import control is present.
+- **AC-009:** For any news feed, clicking "Export View" downloads a JSON file containing `news_items` rows matching whichever Unread/Read toggle is currently active (and, for `filtered`-type feeds, only items with a non-null `matched_filter_id`, same as the view). No import control is present.
 - **AC-010:** The web UI News tab is accessible and displays news items independently of the Movies tab.
 - ~~**AC-011:** Removed — AI-filtered feed type eliminated.~~
 - ~~**AC-012:** Removed — AI-filtered feed type eliminated.~~

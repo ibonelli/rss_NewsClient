@@ -434,15 +434,16 @@ webapp:
 
 ## 6) Export JSON Contract (FR-033)
 
-### Export — `GET /api/news/{feed_name}/export`
+### Export — `GET /api/news/{feed_name}/export?read=<bool>`
 
-Available for any news feed type. Returns a JSON file download (`Content-Disposition: attachment`) containing all unread `news_items` for the feed.
+Available for any news feed type. Returns a JSON file download (`Content-Disposition: attachment`) containing `news_items` matching the given `read` state (default `false`) — mirrors exactly what `GET /api/news/{feed_name}/items?read=<bool>` returns, including the `matched_filter_id IS NOT NULL` restriction for `filtered`-type feeds.
 
 ```json
 {
   "feed_name": "Tech News",
   "exported_at": "2026-06-19T10:00:00Z",
-  "unread_items": [
+  "is_read": false,
+  "items": [
     {
       "id": 517,
       "title": "Critical OpenSSL CVE patched in 3.4.1",
@@ -454,9 +455,9 @@ Available for any news feed type. Returns a JSON file download (`Content-Disposi
 }
 ```
 
-**`unread_items`** — `news_items` rows where `is_read = false` for this feed, regardless of which Read/Unread toggle state is active in the UI. Fields: `id`, `title`, `url`, `published_at`, `content`.
+**`items`** — `news_items` rows where `is_read` matches the `read` query param for this feed (whichever Read/Unread toggle state was active when Export View was clicked). Fields: `id`, `title`, `url`, `published_at`, `content`.
 
-Log: `"Feed <name> export: N unread items"` (NFR-006).
+Log: `"Export for '<name>': N read|unread items"` (NFR-006).
 
 ~~**Import (`POST /api/news/{feed_name}/import`) — Removed.** The import endpoint no longer exists.~~
 
@@ -812,9 +813,9 @@ Response:
 { "ok": true, "marked": 3 }
 ```
 
-### GET `/api/news/{feed_name}/export`
+### GET `/api/news/{feed_name}/export?read=<bool>`
 
-Available for any news feed type. Returns `Content-Disposition: attachment; filename="<feed_name>-export.json"`. Shape documented in Section 6. Always exports unread `news_items` regardless of the current UI toggle state.
+Available for any news feed type. Returns `Content-Disposition: attachment; filename="<feed_name>-export.json"`. Shape documented in Section 6. Exports `news_items` matching the given `read` state (default `false`), mirroring whichever Unread/Read toggle was active in the UI when Export View was clicked.
 
 ~~**`POST /api/news/{feed_name}/import` — Removed.**~~
 

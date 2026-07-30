@@ -2,7 +2,7 @@
 
 ## Scope implemented
 
-All milestones M1–M10 and M12–M17 are implemented and running in production. M11 (Design Feed) is documented and awaiting implementation.
+All milestones M1–M10 and M12–M18 are implemented and running in production. M11 (Design Feed) is documented and awaiting implementation.
 
 - **M1 — Ingestion:** CLI ingester, RSS fetch/parse, dedup, storage
 - **M2 — Enrichment:** On-demand OMDb enrichment via web UI; stores `imdb_id` for direct linking
@@ -540,3 +540,39 @@ No markup, sorting, or grouping logic changes — pure CSS density pass.
 4. Click it on one date section — confirm only that section's items disappear from view, and unread counts for other date sections and other feeds are unaffected
 5. Switch to the Read toggle — confirm the button is absent
 6. `curl -X POST http://127.0.0.1:8000/api/news/{feed}/read-day -H "Content-Type: application/json" -d '{"item_ids": [...]}'` with a mix of valid unread ids, an already-read id, and an id from a different feed — confirm `marked` counts only the valid unread ids for that feed, and a follow-up `GET /api/news/{feed}/items?read=true` shows them moved
+
+---
+
+## M18 — News Export Follows Active View
+
+### Scope
+- Feature request: the News tab's Export button ("Export Unread") always exported unread items regardless of which Read/Unread toggle was active. Changed so Export downloads whichever view is currently open.
+- While reviewing the export path, found a pre-existing gap: for `filtered`-type feeds, export ignored `matched_filter_id`, so it included unread items that never matched a filter and are never shown in that feed's own view. Fixed at the same time, per user decision, so export exactly mirrors `GET /api/news/{feed_name}/items` for the same `read`/feed-type combination.
+- Three explicit user decisions (asked via clarifying questions before implementation):
+  1. Rename the export JSON's `unread_items` key to `items`, add an `is_read` field — safe because the import feature that once consumed this format was removed in ADR-009 (M9).
+  2. Button label changes to static "Export View" (not dynamic per toggle).
+  3. Fix the filtered-feed `matched_filter_id` gap now rather than deferring it.
+- No DB schema change, no CLI/ingester change — pure Web UI change to an existing read-only endpoint.
+
+### Files changed
+- `src/webui/routes.py` — `export_feed` gains a `read: bool = Query(default=False)` param; the query now filters `is_read == read` instead of hardcoding `False`, captures `feed_cfg = _get_news_feed_cfg(...)` (previously discarded) to read `feed_type`, and adds a `matched_filter_id != None` clause when `feed_type == "filtered"`; payload key renamed `unread_items` → `items`, with a new `is_read` field; log line now reports `"read"` or `"unread"` dynamically instead of always `"unread"`
+- `src/webui/static/app.js` — `FeedToolbar` gains an `isRead` prop, used to build `.../export?read=${isRead}`; button label changed from "Export Unread" to "Export View"; `NewsFeedView`'s `<FeedToolbar>` call site passes its existing `isRead` state through (the only call site — verified no other component renders `FeedToolbar`)
+
+### Key decisions
+- **Query param over separate endpoints** — `?read=<bool>` mirrors the exact same parameter already used by `GET /api/news/{feed_name}/items?read=<bool>`, keeping the export endpoint's contract consistent with the list endpoint it's meant to mirror.
+- **`items` key + `is_read` field over keeping `unread_items`** — `unread_items` would be actively misleading once the Read view can be exported too; renaming was judged safe specifically because the only other consumer of this export format (the import endpoint) was already removed (ADR-009), so there's no external format to stay backward-compatible with.
+- **Filtered-feed fix bundled into this change** — the gap was only noticed because "export mirrors the view" forced a direct comparison against `get_news_items`'s filtering logic; fixing it separately later would leave export inconsistent with the view in the interim for filtered feeds specifically.
+- **Static "Export View" label over dynamic "Export Unread"/"Export Read"** — explicit user choice; keeps the button's rendering simpler while still describing behavior (exports the view) accurately.
+
+### Edge cases to handle
+- `filtered`-type feed with zero matched items in the requested `read` state → `items: []`, valid empty export, no error
+- `unfiltered`-type feed → unaffected by the new `matched_filter_id` clause (only applied when `feed_type == "filtered"`)
+- Read view with zero read items yet (e.g. a feed nobody has marked read) → same empty-array behavior, not a 404 or error
+
+### How to test locally (M18)
+1. `python3 -c "import ast; ast.parse(open('src/webui/routes.py').read())"` and `node --check src/webui/static/app.js`
+2. Start the web app; `curl "http://127.0.0.1:8080/api/news/{feed}/export?read=false"` and `?read=true` against a real feed — confirm `items`/`is_read` in the payload and that counts match the corresponding `GET /api/news/{feed}/items?read=<bool>` call
+3. Repeat against a `filtered`-type feed — confirm every exported item has a non-null `matched_filter_id`, for both `read=false` and `read=true`
+4. In the browser: toggle Unread/Read on a News feed, click "Export View" in each state, confirm the downloaded file's `items` matches what's on screen and `is_read` reflects the active toggle
+
+**Verified:** ran directly against the live MySQL dev DB via `curl` — exported a real `unfiltered` feed (Tech News) at both `read=false` and `read=true`, confirmed the `items`/`is_read` shape (including the `unread_items` key being gone) and that counts matched `GET /api/news/{feed}/items?read=<bool>` exactly (42 unread, 8 read); also confirmed a 404 for an unknown feed name and the updated log line format. Export is a read-only `GET` with no side effects, so no test-data cleanup was needed. **Not verified live:** the `filtered`-type `matched_filter_id` restriction — the current `config.yaml` has no `filtered`-type feed configured, and temporarily editing the live config to fabricate one was judged too risky for a running instance. This path was verified by code review only: it's the identical `matched_filter_id != None` conditional already exercised in production by `get_news_items` for the `filtered` branch, applied to the same query pattern.

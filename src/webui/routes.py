@@ -776,23 +776,24 @@ def _get_news_feed_cfg(feed_name: str, config: dict) -> dict:
 @router.get("/api/news/{feed_name}/export")
 async def export_feed(
     feed_name: str,
+    read: bool = Query(default=False),
     session: Session = Depends(_get_session),
     config: dict = Depends(_get_config),
 ):
-    """Return unread news_items as a JSON download (always exports unread regardless of UI toggle)."""
-    _get_news_feed_cfg(feed_name, config)
+    """Return news_items matching the active read/unread view as a JSON download."""
+    feed_cfg = _get_news_feed_cfg(feed_name, config)
+    feed_type = feed_cfg.get("type", "unfiltered")
 
-    unread_rows = (
-        session.query(NewsItem)
-        .filter(NewsItem.feed_name == feed_name, NewsItem.is_read == False)
-        .order_by(NewsItem.published_at.desc())
-        .all()
-    )
+    query = session.query(NewsItem).filter(NewsItem.feed_name == feed_name, NewsItem.is_read == read)
+    if feed_type == "filtered":
+        query = query.filter(NewsItem.matched_filter_id != None)
+    rows = query.order_by(NewsItem.published_at.desc()).all()
 
     payload = {
         "feed_name": feed_name,
         "exported_at": datetime.utcnow().isoformat() + "Z",
-        "unread_items": [
+        "is_read": read,
+        "items": [
             {
                 "id": r.id,
                 "title": r.title,
@@ -800,11 +801,11 @@ async def export_feed(
                 "published_at": r.published_at.isoformat() if r.published_at else None,
                 "content": r.full_content,
             }
-            for r in unread_rows
+            for r in rows
         ],
     }
 
-    logger.info("Export for '%s': %d unread items", feed_name, len(unread_rows))
+    logger.info("Export for '%s': %d %s items", feed_name, len(rows), "read" if read else "unread")
 
     safe_name = feed_name.replace(" ", "_").lower()
     return JSONResponse(

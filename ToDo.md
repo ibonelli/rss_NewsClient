@@ -1,9 +1,7 @@
 ## ToDo
 
-1. In News, each day should have a "Mark as Read" button which only applies to that day. The name will be different, "Mark day as Read".
+1. The movies feed of the source (article link) should be the link of the title. The current IMDB link of the title needs to go to the IMDB with text with class "rating". So in efect, the IMDB rating links to the IMDB page.
 2. Need to find a way to import marked as "to follow" from previous system, and need to find a way to do the same in the new system. Could be a different system that runs on a separate cron. So we create a list of links to the articles, and then the other system goes to process them. Or just collect them and I can pull the list to use in a different system.
-3. The export in News should apply to the view, not only unread. Any view should be exportable.
-4. The movies feed of the source (article link) should be the link of the title. The current IMDB link of the title needs to go to the IMDB with text with class "rating". So in efect, the IMDB rating links to the IMDB page.
 
 ## ToDo later
 
@@ -21,7 +19,7 @@
 
 General
 
-When coding, generate a plan and ask for all permissions at once. Generate a list of commands you'll run, and request and ask for all permissions at once.
+	When coding, generate a plan and ask for all permissions at once. Generate a list of commands you'll run, and request and ask for all permissions at once.
 
 BigChange
 

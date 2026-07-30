@@ -108,14 +108,14 @@ function SaveButton({ isSaved, saveUrl, onSave, className = "" }) {
 // Shared news toolbar — export / import / mark-all-read
 // ---------------------------------------------------------------------------
 
-function FeedToolbar({ feedName, onMarkAllRead, markingAll, showMarkAll }) {
+function FeedToolbar({ feedName, isRead, onMarkAllRead, markingAll, showMarkAll }) {
     const handleExport = () => {
-        window.location.href = `/api/news/${encodeURIComponent(feedName)}/export`;
+        window.location.href = `/api/news/${encodeURIComponent(feedName)}/export?read=${isRead}`;
     };
 
     return html`
         <div className="ai-feed-toolbar">
-            <button className="btn btn-secondary btn-sm" onClick=${handleExport}>Export Unread</button>
+            <button className="btn btn-secondary btn-sm" onClick=${handleExport}>Export View</button>
             ${showMarkAll && html`
                 <button className="btn btn-secondary btn-sm" onClick=${onMarkAllRead} disabled=${markingAll}>
                     ${markingAll ? "..." : "Mark All Read"}
@@ -542,7 +542,7 @@ function NewsFeedView({ feedName, emptyMessage, RowComponent }) {
                     <button className=${`btn btn-sm ${isRead ? "btn-active" : "btn-secondary"}`}
                         onClick=${() => isRead || handleToggleRead()}>Read</button>
                 </div>
-                <${FeedToolbar} feedName=${feedName} onMarkAllRead=${handleMarkAllRead} markingAll=${markingAll} showMarkAll=${!isRead} />
+                <${FeedToolbar} feedName=${feedName} isRead=${isRead} onMarkAllRead=${handleMarkAllRead} markingAll=${markingAll} showMarkAll=${!isRead} />
             </div>
             ${loading
                 ? html`<div className="loading">Loading...</div>`
