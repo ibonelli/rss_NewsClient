@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Changed — M19: Movie Title Links to Source Page
+- Movie title now links to `Movie.source_url` (the RSS feed entry's own page, e.g. the YTS movie page) instead of IMDb; falls back to `Movie.torrent_url` for movies ingested before this field existed
+- IMDb rating badge is now the clickable IMDb link (direct `imdb_id` link, or title+year search if unenriched) — swapped from the title, matching how the RT/Audience badges already behave; stays plain text when the rating is N/A
+- New `movies.source_url` column (nullable) — `torrent_url` was found to be a direct `.torrent` download link, not a page, so the actual source page needed its own field; populated from the RSS entry's `<link>`, which was previously discarded whenever an `<enclosure>` was present (always true for YTS)
+- New idempotent migration `tools/migrate_009_movie_source_url.sh`; no historical backfill is possible (the original `<link>` was never stored) — existing rows opportunistically pick up `source_url` the next time `dedup.py` merges a matching feed entry
+- See FR-038, FR-096, AC-052
+
 ### Changed — M18: News Export Follows Active View
 - `GET /api/news/{feed_name}/export` now takes a `read=<bool>` query param (default `false`) and returns items matching that state, instead of always exporting unread — mirrors `GET /api/news/{feed_name}/items?read=<bool>` exactly, including a `matched_filter_id IS NOT NULL` restriction for `filtered`-type feeds (previously missing, a pre-existing gap fixed as part of this change)
 - Export JSON payload: `unread_items` key renamed to `items`, plus a new `is_read` field — safe since the import feature that once consumed this format was removed in M9 (ADR-009)

@@ -211,7 +211,7 @@ function MovieCard({ movie, onMarkRead, onMarkUnread, onEnrich, onSaveEntry }) {
             `}
             <div className="movie-info">
                 <h3 className="movie-title">
-                    <a href=${imdbUrl} target="_blank" rel="noreferrer">${movie.title}</a>
+                    <a href=${movie.source_url || movie.torrent_url} target="_blank" rel="noreferrer">${movie.title}</a>
                     <span className="movie-year">(${movie.year})</span>
                 </h3>
                 <div className="movie-body">
@@ -227,7 +227,7 @@ function MovieCard({ movie, onMarkRead, onMarkUnread, onEnrich, onSaveEntry }) {
                     </div>
                     ${movie.runtime && html`<div className="movie-runtime">${movie.runtime}</div>`}
                     <div className="movie-ratings">
-                        <${RatingBadge} label="IMDb" value=${movie.imdb_rating} max=${10} />
+                        <${RatingBadge} label="IMDb" value=${movie.imdb_rating} max=${10} href=${imdbUrl} />
                         <${RatingBadge} label="RT" value=${movie.rt_expert_rating} max=${100}
                             href=${movie.rt_expert_rating != null ? `https://www.rottentomatoes.com/search/?search=${encodeURIComponent(movie.title)}` : null} />
                         <${RatingBadge} label="Audience" value=${movie.rt_audience_rating} max=${100}

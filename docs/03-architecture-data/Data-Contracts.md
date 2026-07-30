@@ -53,6 +53,7 @@ class Movie(Base):
     genres: str                       # NOT NULL, JSON array as text e.g. '["Action","Thriller"]'
     torrent_url: str                  # NOT NULL — not indexed directly (see torrent_url_hash)
     torrent_url_hash: str             # NOT NULL, UNIQUE, CHAR(64) — SHA-256(torrent_url); primary dedup key
+    source_url: str | None            # nullable — RSS entry's own page link (e.g. YTS movie page); null for movies ingested before this field existed (M19)
     qualities: str                    # JSON array as text e.g. '[{"quality": "720p", "size": "850 MB"}, {"quality": "1080p", "size": "1.26 GB"}]' — size may be null if not parsed from the description
     imdb_rating: float | None         # 0.0–10.0, nullable (not yet enriched)
     rt_expert_rating: int | None      # 0–100, nullable
@@ -251,7 +252,7 @@ class SavedEntry(Base):
 
 | source_type | link | entry_date | feed_name | summary |
 |---|---|---|---|---|
-| `movie` | Movie's IMDb URL (direct if `imdb_id` known, else title-search — same value as the movie title link, FR-038) | `Movie.feed_entry_date` | `"Movies"` (fixed) | `Movie.plot` or `""` |
+| `movie` | Movie's IMDb URL (direct if `imdb_id` known, else title-search — same value as the IMDb rating badge link, FR-038) | `Movie.feed_entry_date` | `"Movies"` (fixed) | `Movie.plot` or `""` |
 | `series` | Series' IMDb URL (same value as the series title link, FR-045) | `Series.created_at` | `"Series"` (fixed) | `""` (no synopsis data for series) |
 | `news` | `NewsItem.url` | `NewsItem.published_at` | `NewsItem.feed_name` | `NewsItem.full_content` |
 | `design` | `DesignItem.url` | `DesignItem.published_at` | `DesignItem.feed_name` | `DesignItem.summary` |
@@ -463,7 +464,7 @@ Log: `"Export for '<name>': N read|unread items"` (NFR-006).
 
 ## 7) RSS Feed Contract (External — Not Controlled)
 
-**Movie feed:** `https://yts.ag/rss` — RSS 2.0 XML. Fields per `<item>`: `<title>`, `<link>`, `<pubDate>`, `<description>` (HTML blob with poster/genre/rating/size/runtime/plot), `<enclosure>` (torrent URL). Parser extracts title/year/quality from `<title>` via regex; genre/IMDb rating/poster/size/runtime/plot from `<description>` HTML. The description's real layout order is IMDB Rating → Genre → Size → Runtime → plot synopsis; genre/size/runtime are each bounded by their own regex (genre via a lookahead on the labels that can follow it, size/runtime via their own value shape) rather than a single shared terminator, since the description text is flattened to one line with no tag/line-break structure preserved.
+**Movie feed:** `https://yts.ag/rss` — RSS 2.0 XML. Fields per `<item>`: `<title>`, `<link>`, `<pubDate>`, `<description>` (HTML blob with poster/genre/rating/size/runtime/plot), `<enclosure>` (torrent URL). Parser extracts title/year/quality from `<title>` via regex; genre/IMDb rating/poster/size/runtime/plot from `<description>` HTML. The description's real layout order is IMDB Rating → Genre → Size → Runtime → plot synopsis; genre/size/runtime are each bounded by their own regex (genre via a lookahead on the labels that can follow it, size/runtime via their own value shape) rather than a single shared terminator, since the description text is flattened to one line with no tag/line-break structure preserved. `<link>` is captured unconditionally as `Movie.source_url` (M19) — previously it was only used as a `torrent_url` fallback when `<enclosure>` was absent, which YTS entries always have, so this page link was discarded entirely before M19.
 
 **Series feed:** `https://eztv.re/ezrss.xml` — RSS 2.0 XML. Fields per `<item>`: `<title>` (series name + S##E## + quality, e.g. `Show Name S01E05 720p WEB` or `Show.Name.S01E05.720p.WEB`), `<link>` (torrent page URL), `<pubDate>`. No IMDb ID element is present in the feed — `series.imdb_id` is always stored as null; the UI falls back to an IMDb title-search URL (see ADR-010). Parser extracts series name/season/episode/quality via regex on `<title>`; torrent page URL from `<link>`. Entries with no S##E## pattern are skipped (V-027).
 
@@ -504,6 +505,7 @@ Each movie also includes `is_saved` — `true` if a `saved_entries` row exists w
             {"quality": "1080p", "size": "1.26 GB"}
           ],
           "torrent_url": "https://...",
+          "source_url": "https://...",
           "imdb_id": "tt1234567",
           "imdb_rating": 7.2,
           "rt_expert_rating": 85,

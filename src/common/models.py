@@ -39,6 +39,7 @@ class Movie(Base):
     genres: Mapped[str] = mapped_column(Text, nullable=False)  # JSON array as text
     torrent_url: Mapped[str] = mapped_column(String(1000), nullable=False)
     torrent_url_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)  # SHA-256(torrent_url) — see hash_url()
+    source_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)  # RSS entry's own page link (e.g. YTS movie page); null for movies ingested before this field existed
     qualities: Mapped[str] = mapped_column(Text, nullable=False, default="[]")  # JSON array
     imdb_id: Mapped[str | None] = mapped_column(String(20), nullable=True)
     imdb_rating: Mapped[float | None] = mapped_column(Float, nullable=True)

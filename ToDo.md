@@ -1,25 +1,17 @@
 ## ToDo
 
-1. The movies feed of the source (article link) should be the link of the title. The current IMDB link of the title needs to go to the IMDB with text with class "rating". So in efect, the IMDB rating links to the IMDB page.
-2. Need to find a way to import marked as "to follow" from previous system, and need to find a way to do the same in the new system. Could be a different system that runs on a separate cron. So we create a list of links to the articles, and then the other system goes to process them. Or just collect them and I can pull the list to use in a different system.
-
-## ToDo later
-
-1. Need to consume a different kind of "feed". It is the listing of a webpage which has links to articles with the title and a description. It will be a new kind of feed like "News", but it won't use RSS as source. Just and HTML listing. It will require configuration for each feed to figure out the HTML structure and mapping into a feed like record. For this new feed use `https://betovaldez.com.ar/category/actualidad/` which should match with `http://betovaldez.com.ar/feed/` to model it.
-2. There needs to be a new category which can save links in all types of feeds. Feeds can be marked as "ToKeep"
-3. There should be a housekeeping process that deletes old links to keep DB size under control.
+1. Need to find a way to import marked as "to follow" from previous system, and need to find a way to do the same in the new system. Could be a different system that runs on a separate cron. So we create a list of links to the articles, and then the other system goes to process them. Or just collect them and I can pull the list to use in a different system.
 
 ## For later
 
-1. We now have "Mark as Read" button. Add same buttons with "all above" & "all below".
-2. The export functionality in the News type feed should apply to the current view (not only for unread as it do now).
-3. For all feeds there should be a new view that's all (read & unread) and which is order by date of ingestion and it shows unread items before read items.
+1. There should be a housekeeping process that deletes old links to keep DB size under control.
+2. Need to consume a different kind of "feed". It is the listing of a webpage which has links to articles with the title and a description. It will be a new kind of feed like "News", but it won't use RSS as source. Just and HTML listing. It will require configuration for each feed to figure out the HTML structure and mapping into a feed like record. For this new feed use `https://betovaldez.com.ar/category/actualidad/` which should match with `http://betovaldez.com.ar/feed/` to model it.
 
 ----
 
 General
 
-	When coding, generate a plan and ask for all permissions at once. Generate a list of commands you'll run, and request and ask for all permissions at once.
+When coding, generate a plan and ask for all permissions at once. Generate a list of commands you'll run, and request and ask for all permissions at once.
 
 BigChange
 

@@ -2,7 +2,7 @@
 
 ## Scope implemented
 
-All milestones M1–M10 and M12–M18 are implemented and running in production. M11 (Design Feed) is documented and awaiting implementation.
+All milestones M1–M10 and M12–M19 are implemented and running in production. M11 (Design Feed) is documented and awaiting implementation.
 
 - **M1 — Ingestion:** CLI ingester, RSS fetch/parse, dedup, storage
 - **M2 — Enrichment:** On-demand OMDb enrichment via web UI; stores `imdb_id` for direct linking
@@ -576,3 +576,42 @@ No markup, sorting, or grouping logic changes — pure CSS density pass.
 4. In the browser: toggle Unread/Read on a News feed, click "Export View" in each state, confirm the downloaded file's `items` matches what's on screen and `is_read` reflects the active toggle
 
 **Verified:** ran directly against the live MySQL dev DB via `curl` — exported a real `unfiltered` feed (Tech News) at both `read=false` and `read=true`, confirmed the `items`/`is_read` shape (including the `unread_items` key being gone) and that counts matched `GET /api/news/{feed}/items?read=<bool>` exactly (42 unread, 8 read); also confirmed a 404 for an unknown feed name and the updated log line format. Export is a read-only `GET` with no side effects, so no test-data cleanup was needed. **Not verified live:** the `filtered`-type `matched_filter_id` restriction — the current `config.yaml` has no `filtered`-type feed configured, and temporarily editing the live config to fabricate one was judged too risky for a running instance. This path was verified by code review only: it's the identical `matched_filter_id != None` conditional already exercised in production by `get_news_items` for the `filtered` branch, applied to the same query pattern.
+
+---
+
+## M19 — Movie Title Links to Source Page
+
+### Scope
+- Feature request: swap the Movies tab's title/IMDb-rating link assignment. Previously the movie **title** linked to IMDb (FR-038) and the IMDb rating badge was plain text; now the title links to the movie's own source page (the RSS feed entry's own page link) and the IMDb rating badge is the clickable IMDb link instead, matching how the RT/Audience badges already work.
+- Investigation found `Movie.torrent_url` — confirmed by querying the live dev DB — is a direct `.torrent` file download link (e.g. `https://yts.gg/torrent/download/...`), not a page/article. The actual YTS movie page is the RSS entry's own `<link>`, which `fetcher.py` discarded whenever an enclosure was present (which YTS entries always have). No source-page URL was stored anywhere before this milestone.
+- User-confirmed decision (asked via clarifying question, given the schema-change implication): add a new nullable `movies.source_url` column, populated from the RSS entry's `<link>` unconditionally, with a migration script. Existing rows stay `NULL` until re-ingested.
+- Title link fallback for `source_url IS NULL` rows: falls back to `torrent_url` (a judgment call, not separately asked — chosen because it always yields a working link, same graceful-degradation spirit already used elsewhere, e.g. the IMDb search-URL fallback when `imdb_id` is unknown).
+
+### Files changed
+- `src/common/models.py` — added `Movie.source_url` (`String(1000)`, nullable), placed next to `torrent_url_hash`
+- `src/cli/fetcher.py` — `_parse_entry` now captures `entry.get("link") or None` unconditionally into a new `source_url` var (previously `entry.get("link", "")` was only consulted as a `torrent_url` fallback when no `<enclosure>` was present), added to the returned dict
+- `src/cli/dedup.py` (`deduplicate_and_store`) — new-insert branch passes `source_url=movie.get("source_url")` to the `Movie(...)` constructor; both merge branches (matched by `torrent_url_hash` and by title+year) opportunistically backfill `existing.source_url` from the incoming `movie.get("source_url")` when the existing row doesn't have one yet, so already-ingested movies pick this up the next time the feed re-lists them
+- `src/webui/routes.py` — `_movie_to_dict` adds `"source_url": movie.source_url`
+- `src/webui/static/app.js` — `MovieCard`'s title anchor changed from `imdbUrl` to `movie.source_url || movie.torrent_url`; the `imdbUrl` computation (unchanged) is now passed as `href` to the IMDb `RatingBadge` call instead, reusing the same optional-`href`-wrapping behavior `RatingBadge` already implements for the RT/Audience badges (including the existing N/A-stays-plain-text short-circuit) — no changes needed to `RatingBadge` itself
+- `tools/migrate_009_movie_source_url.sh` — new idempotent migration adding the nullable column (MySQL/SQLite branch, `information_schema`/`PRAGMA` existence check), following the `migrate_004_movie_runtime_plot.sh` pattern
+
+### Key decisions
+- **New column over reusing `torrent_url`** — `torrent_url` is a direct download link, not a page; conflating the two would make the title link to the same download file the quality badges already link to, losing the actual source-page destination entirely.
+- **Unconditional capture in the fetcher, not just a fallback** — the old logic only ever looked at `entry.get("link")` when there was no enclosure, so for YTS (which always has one) this value was never observed before. Capturing it as its own field regardless of enclosure presence is what makes the source page available at all.
+- **No historical backfill** — the original `<link>` values for already-ingested movies were never stored anywhere and can't be recovered retroactively; the opportunistic backfill in `dedup.py`'s merge branches is the only path old rows have to eventually get `source_url` populated (next time the feed still lists them).
+- **Fallback to `torrent_url`, not to a dead link or no link at all** — keeps every movie's title clickable even before re-ingestion catches up.
+
+### Edge cases to handle
+- Movie row with `source_url IS NULL` (not yet re-ingested) → title falls back to `torrent_url`, still clickable
+- Movie with `imdb_rating IS NULL` (unenriched) → IMDb badge renders as plain "IMDb: N/A" text, same as before — `RatingBadge`'s existing early-return on null value means the new `href` is never consulted in this case
+- RSS entry with `<link>` present but empty string → `entry.get("link") or None` normalizes empty string to `None`, keeping the nullable column's semantics consistent (no empty-string vs NULL ambiguity)
+- Existing merge path (same `torrent_url_hash` or same title+year) where the existing row already has a `source_url` → backfill check (`if not existing.source_url`) is a no-op, never overwrites an already-populated value
+
+### How to test locally (M19)
+1. `python3 -c "import ast; ast.parse(open('src/common/models.py').read())"` (and the same for `fetcher.py`, `dedup.py`, `routes.py`); `node --check src/webui/static/app.js`
+2. `bash tools/migrate_009_movie_source_url.sh` against the live dev DB — confirm the column is added, confirm a second run reports "already exists"
+3. Run the CLI ingester once (`python src/cli/main.py`) to pull fresh YTS entries; query the DB directly to confirm at least one movie row has a non-null `source_url` distinct from its `torrent_url`
+4. Start the web app, open the Movies tab: confirm the title now opens a movie page (not IMDb) in a new tab, and the IMDb rating badge is now clickable (opens IMDb) when a rating is present; confirm it stays plain text for an unenriched (N/A) movie; confirm RT/Audience badges are unchanged
+5. Find a movie row with `source_url` still `NULL` (pre-migration data untouched by a subsequent ingest) — confirm its title falls back to the torrent link rather than being broken
+
+**Verified:** ran `tools/migrate_009_movie_source_url.sh` against the live MySQL dev DB (added the column, confirmed idempotent on re-run), then confirmed via direct `GET /api/movies` calls: pre-migration rows correctly show `source_url: null` (e.g. movie id 7/9) alongside `torrent_url` still populated; the scheduled cron ingester (runs every 2 hours independently of this session) had already picked up the code change by the time this was checked and produced at least one real row with a populated `source_url` distinct from `torrent_url` (movie id 28, `https://yts.gg/movies/achilles-returns-2026`), confirming the fetcher/dedup path works against the live feed unattended. All four Movies view combinations (`read`×`flagged`) were queried via the API and returned successfully post-migration. **Not verified live:** the actual click-through in a browser (title opening the source page, IMDb badge becoming clickable, N/A badges staying plain) — no GUI browser is available in this environment (same limitation noted in M16/M18); verified by code review instead, reusing `RatingBadge`'s existing, unmodified `href`-wrapping and N/A short-circuit logic. The current dataset also didn't happen to include a null-`imdb_rating` (N/A) movie in the unread/flagged view at verification time to visually confirm against, though the code path is unchanged from what M1–M18 already exercised.

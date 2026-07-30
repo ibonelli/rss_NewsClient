@@ -138,7 +138,7 @@
 ### Saved Entries (Cross-Feed)
 - **FR-095:** The web application MUST provide a "Save Entry" action, available on every item across all four content tabs (Movies, Series — at the series-title level, not per-episode — News, Design), that copies a common-format snapshot of the item into a dedicated `saved_entries` table. Saving is independent of the item's read/unread state (or, for Series, its Inbox/OnGoing/Following/Ignored category) — it does not alter either.
 - **FR-096:** Each `saved_entries` row MUST store: `source_type` (`movie`\|`series`\|`news`\|`design`), `source_id` (the originating row's id in its own table), `title`, `link`, `entry_date` (nullable), `feed_name`, `summary`, and `saved_at` (auto-set on insert). Field mapping per source type:
-  - **Movies:** `link` = the same IMDb URL used for the movie title link (FR-038) — direct `imdb_id` link if known, else IMDb title-search; `entry_date` = `Movie.feed_entry_date`; `feed_name` = fixed string `"Movies"`; `summary` = `Movie.plot` (empty string if null).
+  - **Movies:** `link` = the movie's IMDb URL (direct `imdb_id` link if known, else IMDb title-search — the same computation used by the IMDb rating badge link, FR-038); `entry_date` = `Movie.feed_entry_date`; `feed_name` = fixed string `"Movies"`; `summary` = `Movie.plot` (empty string if null).
   - **Series:** `link` = the same IMDb URL used for the series title link (FR-045); `entry_date` = the `series` row's `created_at` (no single per-series feed date exists — episode dates live on `series_episodes`); `feed_name` = fixed string `"Series"`; `summary` = empty string (no synopsis data available for series).
   - **News:** `link` = `NewsItem.url`; `entry_date` = `NewsItem.published_at`; `feed_name` = `NewsItem.feed_name`; `summary` = `NewsItem.full_content`.
   - **Design:** `link` = `DesignItem.url`; `entry_date` = `DesignItem.published_at`; `feed_name` = `DesignItem.feed_name`; `summary` = `DesignItem.summary`.
@@ -164,7 +164,7 @@
   - The four combinations (Unread+Flagged, Unread+Un-Flagged, Read+Flagged, Read+Un-Flagged) cover all movie states. Default on load: Unread + Flagged.
 - **FR-055:** Movies with no ratings (all null — not yet enriched) MUST appear in the **Flagged** state. They pass the filter by default until enriched.
 - **FR-056:** The Flagged/Un-Flagged split MUST use the same runtime logic and config thresholds as the existing filter — no `is_flagged` column is stored; the split is computed at query time.
-- **FR-038:** The movie title MUST be a clickable link to IMDb — directly to `https://www.imdb.com/title/{imdb_id}/` when `imdb_id` is known, falling back to an IMDb title+year search URL for unenriched movies. The IMDb rating badge MUST be plain text (not a link). RT (Tomatometer and Audience) badges MUST link to a Rotten Tomatoes title search. RT badges with no rating (N/A) MUST NOT be links.
+- **FR-038:** The movie title MUST be a clickable link to `Movie.source_url` (the RSS feed entry's own page link) when known, falling back to `Movie.torrent_url` for movies ingested before `source_url` existed. The IMDb rating badge MUST be a clickable link to IMDb — directly to `https://www.imdb.com/title/{imdb_id}/` when `imdb_id` is known, falling back to an IMDb title+year search URL for unenriched movies — when a rating value is present; it MUST remain plain text (not a link) when the rating is N/A. RT (Tomatometer and Audience) badges MUST link to a Rotten Tomatoes title search. RT badges with no rating (N/A) MUST NOT be links.
 
 ### Mark All as Read
 - **FR-048:** The Movies tab MUST provide a "Mark All Read" button when the **Unread** toggle is active. It marks only the currently visible movies (respecting the current Flagged/Un-Flagged state) as read, and removes them from the view. The button MUST NOT appear when the Read toggle is active.
@@ -258,6 +258,7 @@
 - **AC-049:** Clicking "Export" on the Saved tab downloads a JSON file containing every currently saved entry, regardless of when each was saved.
 - **AC-050:** Visiting `/saved` directly loads the app with the Saved tab active.
 - **AC-051:** Clicking "Mark day as Read" on a News date section marks only that section's items as read and removes them from view; unread items in other date sections of the same feed, and unread items in other feeds, remain unaffected. The button does not appear on the Read toggle.
+- **AC-052:** The movie title links to `Movie.source_url` (the RSS feed entry's own page) when known, falling back to `Movie.torrent_url` for movies ingested before `source_url` existed. The IMDb rating badge links to the movie's IMDb page (or an IMDb title+year search, if unenriched) when a rating value is present, and remains plain, non-clickable text when the rating is N/A.
 
 ## 8) Open Questions
 - **Q-001:** Which free rating source is most reliable/complete for movies? (TMDb, OMDb free tier, imdbapi.dev, scraping?)

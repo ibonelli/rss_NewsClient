@@ -156,6 +156,11 @@ def _parse_entry(entry: dict) -> dict | None:
         logger.warning("Skipping entry with no URL: %s", raw_title)
         return None
 
+    # The entry's own page link (e.g. the YTS movie page) — captured unconditionally,
+    # unlike torrent_url above which only falls back to entry.get("link") when there's
+    # no enclosure. Distinct from torrent_url when an enclosure is present.
+    source_url = entry.get("link") or None
+
     # Parse description HTML
     description = entry.get("summary", "") or entry.get("description", "")
     desc_data = _parse_description(description)
@@ -185,6 +190,7 @@ def _parse_entry(entry: dict) -> dict | None:
         "year": year,
         "genres": genres,
         "torrent_url": torrent_url,
+        "source_url": source_url,
         "qualities": qualities,
         "poster_url": desc_data["poster_url"],
         "imdb_rating": desc_data["imdb_rating"],

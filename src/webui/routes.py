@@ -50,6 +50,7 @@ def _movie_to_dict(movie: Movie, saved_ids: set[int] | None = None) -> dict:
         "genres": json.loads(movie.genres) if movie.genres else [],
         "qualities": json.loads(movie.qualities) if movie.qualities else [],
         "torrent_url": movie.torrent_url,
+        "source_url": movie.source_url,
         "imdb_id": movie.imdb_id,
         "imdb_rating": movie.imdb_rating,
         "rt_expert_rating": movie.rt_expert_rating,

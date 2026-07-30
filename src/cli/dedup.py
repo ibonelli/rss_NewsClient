@@ -103,6 +103,8 @@ def deduplicate_and_store(session: Session, movies: list[dict]) -> dict:
                 existing.qualities = _merge_qualities(
                     existing.qualities, movie["qualities"]
                 )
+                if not existing.source_url and movie.get("source_url"):
+                    existing.source_url = movie["source_url"]
                 existing.updated_at = datetime.utcnow()
                 stats["merged"] += 1
                 logger.debug("Merged qualities for existing URL: %s", movie["title"])
@@ -118,6 +120,8 @@ def deduplicate_and_store(session: Session, movies: list[dict]) -> dict:
                 existing.qualities = _merge_qualities(
                     existing.qualities, movie["qualities"]
                 )
+                if not existing.source_url and movie.get("source_url"):
+                    existing.source_url = movie["source_url"]
                 existing.updated_at = datetime.utcnow()
                 stats["merged"] += 1
                 logger.debug("Merged qualities for title+year match: %s (%d)", movie["title"], movie["year"])
@@ -130,6 +134,7 @@ def deduplicate_and_store(session: Session, movies: list[dict]) -> dict:
                 genres=json.dumps(movie["genres"]),
                 torrent_url=movie["torrent_url"],
                 torrent_url_hash=torrent_url_hash,
+                source_url=movie.get("source_url"),
                 qualities=json.dumps(movie["qualities"]),
                 imdb_rating=movie.get("imdb_rating"),
                 poster_url=movie.get("poster_url"),
