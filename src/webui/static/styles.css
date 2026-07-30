@@ -463,10 +463,11 @@ body {
     margin-bottom: 0.5rem;
 }
 
-.news-date-header {
-    font-size: 0.95rem;
-    font-weight: 600;
-    color: var(--text-secondary);
+.news-date-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
     padding: 0.3rem 0 0.2rem;
     border-bottom: 1px solid var(--border);
     margin-bottom: 0.3rem;
@@ -474,6 +475,12 @@ body {
     top: 70px;
     background-color: var(--bg-primary);
     z-index: 50;
+}
+
+.news-date-header {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-secondary);
 }
 
 /* News item rows */

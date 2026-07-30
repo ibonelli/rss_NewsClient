@@ -10,6 +10,7 @@ from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
+from pydantic import BaseModel
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
@@ -730,6 +731,34 @@ async def mark_all_news_read(
     ).update({"is_read": True}, synchronize_session=False)
     session.commit()
     return {"ok": True}
+
+
+class NewsItemIdsRequest(BaseModel):
+    item_ids: list[int]
+
+
+@router.post("/api/news/{feed_name}/read-day")
+async def mark_news_day_read(
+    feed_name: str,
+    payload: NewsItemIdsRequest,
+    session: Session = Depends(_get_session),
+    config: dict = Depends(_get_config),
+):
+    """Mark a specific set of items as read — scoped to one date group in the UI (FR-104)."""
+    _get_news_feed_cfg(feed_name, config)
+    updated = 0
+    if payload.item_ids:
+        updated = (
+            session.query(NewsItem)
+            .filter(
+                NewsItem.feed_name == feed_name,
+                NewsItem.id.in_(payload.item_ids),
+                NewsItem.is_read == False,
+            )
+            .update({"is_read": True}, synchronize_session=False)
+        )
+    session.commit()
+    return {"ok": True, "marked": updated}
 
 
 # ---------------------------------------------------------------------------

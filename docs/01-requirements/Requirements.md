@@ -149,6 +149,7 @@
 - **FR-101:** The Saved tab MUST provide a "Remove from Saved" action per row (`DELETE /api/saved/{id}`) that deletes the row from `saved_entries` immediately, persisted, and does not alter the original source row (Movie/Series/News/Design) in any way.
 - **FR-102:** The Saved tab MUST provide an "Export" button (`GET /api/saved/export`) that downloads a JSON file containing every row currently in `saved_entries` — no read/unread filtering applies (Saved has no read state), unlike the unread-only News export (FR-033).
 - **FR-103:** The Saved tab MUST be reachable via a bookmarkable URL `/saved`, following the same routing pattern as the other four tabs (FR-075).
+- **FR-104:** Every News tab date-section header (produced by the existing date grouping, including the trailing "Unknown date" group for undated items) MUST provide a "Mark day as Read" button when the **Unread** toggle is active. It marks only the items within that date group as read (`POST /api/news/{feed_name}/read-day`) and removes them from view; other date sections, and other feeds, are unaffected. The button MUST NOT appear when the Read toggle is active.
 
 ### Export (All News Feeds)
 - **FR-033:** The web application MUST expose `GET /api/news/{feed}/export` for any configured news feed, returning a downloadable JSON file containing only `unread_items` (all `news_items` rows for that feed where `is_read = false`). Each item MUST include its `news_items.id`, title, URL, publication date, and content.
@@ -256,6 +257,7 @@
 - **AC-048:** Clicking "Remove from Saved" deletes the row from `saved_entries` and removes it from the Saved view immediately; the original Movie/Series/News/Design row is untouched, and that item's "Save Entry" button becomes clickable again the next time its list is fetched (`is_saved` recomputed as `false`).
 - **AC-049:** Clicking "Export" on the Saved tab downloads a JSON file containing every currently saved entry, regardless of when each was saved.
 - **AC-050:** Visiting `/saved` directly loads the app with the Saved tab active.
+- **AC-051:** Clicking "Mark day as Read" on a News date section marks only that section's items as read and removes them from view; unread items in other date sections of the same feed, and unread items in other feeds, remain unaffected. The button does not appear on the Read toggle.
 
 ## 8) Open Questions
 - **Q-001:** Which free rating source is most reliable/complete for movies? (TMDb, OMDb free tier, imdbapi.dev, scraping?)

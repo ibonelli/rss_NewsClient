@@ -796,6 +796,22 @@ Marks all unread `news_items` for the feed as read (`is_read = true`). Available
 { "ok": true }
 ```
 
+### POST `/api/news/{feed_name}/read-day`
+
+Marks a specific set of `news_items` as read (`is_read = true`), scoped to `feed_name` and the given ids — used by the News tab's per-date-section "Mark day as Read" button (FR-104). Ids not belonging to `feed_name`, or already read, are silently ignored (not counted, not errored). Only called from the Unread toggle state.
+
+Request body:
+
+```json
+{ "item_ids": [517, 518, 519] }
+```
+
+Response:
+
+```json
+{ "ok": true, "marked": 3 }
+```
+
 ### GET `/api/news/{feed_name}/export`
 
 Available for any news feed type. Returns `Content-Disposition: attachment; filename="<feed_name>-export.json"`. Shape documented in Section 6. Always exports unread `news_items` regardless of the current UI toggle state.

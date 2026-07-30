@@ -2,7 +2,7 @@
 
 ## Scope implemented
 
-All milestones M1–M10 and M12–M16 are implemented and running in production. M11 (Design Feed) is documented and awaiting implementation.
+All milestones M1–M10 and M12–M17 are implemented and running in production. M11 (Design Feed) is documented and awaiting implementation.
 
 - **M1 — Ingestion:** CLI ingester, RSS fetch/parse, dedup, storage
 - **M2 — Enrichment:** On-demand OMDb enrichment via web UI; stores `imdb_id` for direct linking
@@ -506,3 +506,37 @@ No markup, sorting, or grouping logic changes — pure CSS density pass.
 9. Visit `/saved` directly — confirm it loads with the Saved tab active
 
 **Verified:** steps 1-2 and 5-9 above were run directly against the API (`curl`) on the live MySQL dev DB — one real item of each of the four types was saved, `is_saved` confirmed `true` on a fresh `GET` (not just the save response), a second save on the same id confirmed idempotent (same `saved_entries.id`, single DB row via direct query), `GET /api/saved` returned all four grouped correctly (most-recent-first), `DELETE /api/saved/{id}` removed each and flipped the source item's `is_saved` back to `false` on the next `GET`, `GET /api/saved/export` returned a valid download (including the empty-list case after cleanup) with the `"Saved export: N items"` log line, `GET /saved` returned 200, and 404s were confirmed on all four save endpoints plus delete for a nonexistent id. Source rows' `is_read`/`is_following`/`is_ignored` were confirmed unchanged by direct DB query before/after. All test data was cleaned up afterward (`saved_entries` empty, matching pre-test state). **Not verified in this pass:** the actual React UI in a browser (button rendering/disabled-state styling, click interactions, tab navigation) — this environment has no GUI browser available, so the frontend was verified by code review and JS syntax check (`node --check`) only, not a live click-through.
+
+---
+
+## M17 — Mark Day as Read (News)
+
+### Scope
+- Feature request: a per-date-section "Mark day as Read" button on the News tab, scoped only to the items already grouped under that date header (including the trailing "Unknown date" group for undated items) — not the whole feed like the existing "Mark All Read" (FR-050)
+- New endpoint: `POST /api/news/{feed_name}/read-day`, accepting a JSON body of `item_ids`
+- New frontend component `NewsDateSection` wrapping each date group, owning its own "marking" loading state and rendering the button only on the Unread toggle
+- No DB schema change, no CLI/ingester change — pure Web UI read-tracking addition, same table (`news_items`) and column (`is_read`) as the existing read/unread actions
+
+### Files changed
+- `src/webui/routes.py` — added `from pydantic import BaseModel`; added `NewsItemIdsRequest` (`item_ids: list[int]`) and `POST /api/news/{feed_name}/read-day`, placed directly after `mark_all_news_read`; reuses `_get_news_feed_cfg` for the 404-on-unknown-feed check
+- `src/webui/static/app.js` — extracted the previously-inline per-group render block out of `NewsFeedView` into a new `NewsDateSection` component (mirrors the existing per-row loading-state pattern used by `MovieCard`/`NewsItemRow`); `NewsFeedView` now maps `groupNewsByDate(items)` to `<NewsDateSection>` instead of rendering the group markup directly
+- `src/webui/static/styles.css` — split `.news-date-header` into `.news-date-header-row` (the sticky/border/padding/background/z-index flex wrapper, now holding both the label and the button) and a slimmed-down `.news-date-header` (text styling only)
+
+### Key decisions
+- **Item-id list, not a date query param** — the day boundaries used to build each group ("Today"/"Yesterday"/full date, and the "Unknown date" bucket) are computed client-side from the browser's local clock (`newsDateKey`/`formatNewsDateLabel`). The server has no reliable way to reproduce the same boundary (no stored user timezone), so replicating "mark everything published on date X" server-side risked marking a different set of items than what the user was actually looking at. Submitting the exact ids already rendered in that group sidesteps the mismatch entirely, and naturally covers the undated "Unknown date" group where a date-based query wouldn't apply anyway.
+- **Scoped by `feed_name` + `id IN (...)`, not id-only** — defends against a stale or tampered id list from marking items in a different feed as read.
+- Ids that are already read, or don't belong to `feed_name`, are silently excluded from the update (not an error) — the endpoint returns `marked: <n>` reflecting only the ids that actually flipped, consistent with the fire-and-forget style of `read-all`.
+
+### Edge cases to handle
+- Empty `item_ids` list (e.g. a group already emptied by a race with another tab) → endpoint short-circuits to `{"ok": true, "marked": 0}`, no query executed
+- Id list containing an id from a different feed → filtered out by the `feed_name` clause, not marked, not errored
+- Id list containing an already-read id (e.g. double-click before the UI removes the row) → excluded by `is_read == False` in the filter, doesn't affect the `marked` count
+- Unknown `feed_name` → 404 via `_get_news_feed_cfg`, same as every other News endpoint
+
+### How to test locally (M17)
+1. `python -c "import ast; ast.parse(open('src/webui/routes.py').read())"` and `node --check src/webui/static/app.js` — syntax sanity check, no GUI browser in this environment (same limitation noted in M16)
+2. Start the web app; open a News feed with unread items spanning two or more days (plus at least one undated item, if available, to exercise "Unknown date")
+3. Confirm each date header shows a "Mark day as Read" button only while the Unread toggle is active
+4. Click it on one date section — confirm only that section's items disappear from view, and unread counts for other date sections and other feeds are unaffected
+5. Switch to the Read toggle — confirm the button is absent
+6. `curl -X POST http://127.0.0.1:8000/api/news/{feed}/read-day -H "Content-Type: application/json" -d '{"item_ids": [...]}'` with a mix of valid unread ids, an already-read id, and an id from a different feed — confirm `marked` counts only the valid unread ids for that feed, and a follow-up `GET /api/news/{feed}/items?read=true` shows them moved

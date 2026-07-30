@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added — M17: Mark Day as Read (News)
+- New per-date-section "Mark day as Read" button on every News feed view, alongside the existing feed-wide "Mark All Read" — marks only the items in that date group (including the trailing "Unknown date" group) as read and removes them from view; visible only on the Unread toggle
+- New endpoint `POST /api/news/{feed_name}/read-day` accepting `{"item_ids": [...]}`, scoped by `feed_name` and only affecting currently-unread ids in that feed
+- Item ids are submitted from the client rather than a date filter, since the date grouping ("Today"/"Yesterday"/full date/"Unknown date") is computed from the browser's local clock — a server-side date query couldn't reliably reproduce the same day boundaries
+- No DB schema change, no CLI/ingester change
+- See FR-104, AC-051
+
 ### Added — M16: Saved Entries (ADR-017)
 - New `saved_entries` table: common format across all four content tabs (Movies, Series, News, Design) — `source_type`, `source_id`, `title`, `link`, `entry_date`, `feed_name`, `summary`, `saved_at`; unique on `(source_type, source_id)` for idempotent saving
 - New "Save Entry" button on every item row (Movies, Series — at the series-title level, not per-episode — News, Design), alongside the existing Mark Read/Follow/Ignore actions; visible regardless of read/unread or category state; becomes a disabled "Saved" state once clicked

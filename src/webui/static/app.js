@@ -453,6 +453,41 @@ function groupNewsByDate(items) {
     return groups;
 }
 
+function NewsDateSection({ group, feedName, isRead, RowComponent, onRemove, onSaveEntry }) {
+    const [marking, setMarking] = useState(false);
+
+    const handleMarkDayRead = async () => {
+        setMarking(true);
+        try {
+            await fetch(`/api/news/${encodeURIComponent(feedName)}/read-day`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ item_ids: group.items.map(item => item.id) }),
+            });
+            group.items.forEach(item => onRemove(item.id));
+        } catch (e) {
+            console.error("Failed to mark day as read:", e);
+        }
+        setMarking(false);
+    };
+
+    return html`
+        <div className="news-date-section">
+            <div className="news-date-header-row">
+                <h3 className="news-date-header">${group.label}</h3>
+                ${!isRead && html`
+                    <button className="btn btn-secondary btn-sm" onClick=${handleMarkDayRead} disabled=${marking}>
+                        ${marking ? "..." : "Mark day as Read"}
+                    </button>
+                `}
+            </div>
+            <div className="news-list">
+                ${group.items.map(item => html`<${RowComponent} key=${item.id} item=${item} isReadView=${isRead} onRemove=${onRemove} onSaveEntry=${onSaveEntry} />`)}
+            </div>
+        </div>
+    `;
+}
+
 // ---------------------------------------------------------------------------
 // News feed views
 // ---------------------------------------------------------------------------
@@ -514,12 +549,7 @@ function NewsFeedView({ feedName, emptyMessage, RowComponent }) {
                 : items.length === 0
                     ? html`<div className="empty-state">${isRead ? "No read items." : emptyMessage}</div>`
                     : groupNewsByDate(items).map(group => html`
-                        <div key=${group.label} className="news-date-section">
-                            <h3 className="news-date-header">${group.label}</h3>
-                            <div className="news-list">
-                                ${group.items.map(item => html`<${RowComponent} key=${item.id} item=${item} isReadView=${isRead} onRemove=${handleRemove} onSaveEntry=${handleSaveEntry} />`)}
-                            </div>
-                        </div>
+                        <${NewsDateSection} key=${group.label} group=${group} feedName=${feedName} isRead=${isRead} RowComponent=${RowComponent} onRemove=${handleRemove} onSaveEntry=${handleSaveEntry} />
                     `)
             }
         </div>
