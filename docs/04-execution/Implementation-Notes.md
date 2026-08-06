@@ -473,6 +473,8 @@ No markup, sorting, or grouping logic changes — pure CSS density pass.
 - `src/webui/static/styles.css` — added `.btn-save`/`.btn-saved` (modeled on `.btn-keep`/`.btn-keep-active`), `.series-save-btn` (distinct from `.series-ignore-btn` since Save isn't category-gated), and `.saved-summary`; the Saved tab's list otherwise reuses `.news-list`/`.news-item`/`.news-item-header`/`.empty-state` as-is
 - `tools/migrate_008_saved_entries.sh` — new idempotent migration creating the `saved_entries` table on an existing (already-deployed) DB, for anyone who doesn't want to wait for the next `create_all()`-on-startup
 
+**Follow-up fix (Unreleased):** `.saved-summary` unbounded text was a readability problem in the flat Saved list — clamped to 2 lines via CSS `line-clamp`/`-webkit-line-clamp` with `overflow: hidden` (ellipsis on overflow), CSS-only, no JS change.
+
 ### Key decisions (ADR-017)
 - One common `saved_entries` table across all four content types, not four separate per-type "saved" tables — matches the user's explicit ask for "a common format" and keeps the Saved tab a single flat list/export without a union query across four schemas
 - `source_type` + `source_id` instead of a real FK — a single FK can't span four different parent tables; validity of `source_id` is checked at the application layer only, at save time

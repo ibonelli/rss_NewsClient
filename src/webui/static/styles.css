@@ -685,6 +685,11 @@ body {
     font-size: 0.85rem;
     line-height: 1.5;
     margin: 0.3rem 0 0.4rem;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
 }
 
 /* Responsive */

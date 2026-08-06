@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed — Saved Tab Summary Text Clamped to 2 Lines
+- `.saved-summary` (Saved tab entry body text, M16/ADR-017) now clamps to a maximum of 2 lines with ellipsis overflow via CSS `line-clamp`, instead of rendering the full summary unbounded
+- CSS-only change — no JS or API changes
+
 ### Changed — M19: Movie Title Links to Source Page
 - Movie title now links to `Movie.source_url` (the RSS feed entry's own page, e.g. the YTS movie page) instead of IMDb; falls back to `Movie.torrent_url` for movies ingested before this field existed
 - IMDb rating badge is now the clickable IMDb link (direct `imdb_id` link, or title+year search if unenriched) — swapped from the title, matching how the RT/Audience badges already behave; stays plain text when the rating is N/A
