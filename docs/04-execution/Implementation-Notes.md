@@ -2,7 +2,7 @@
 
 ## Scope implemented
 
-All milestones M1–M10 and M12–M19 are implemented and running in production. M11 (Design Feed) is documented and awaiting implementation.
+All milestones M1–M10 and M12–M20 are implemented and running in production. M11 (Design Feed) is documented and awaiting implementation.
 
 - **M1 — Ingestion:** CLI ingester, RSS fetch/parse, dedup, storage
 - **M2 — Enrichment:** On-demand OMDb enrichment via web UI; stores `imdb_id` for direct linking
@@ -617,3 +617,31 @@ No markup, sorting, or grouping logic changes — pure CSS density pass.
 5. Find a movie row with `source_url` still `NULL` (pre-migration data untouched by a subsequent ingest) — confirm its title falls back to the torrent link rather than being broken
 
 **Verified:** ran `tools/migrate_009_movie_source_url.sh` against the live MySQL dev DB (added the column, confirmed idempotent on re-run), then confirmed via direct `GET /api/movies` calls: pre-migration rows correctly show `source_url: null` (e.g. movie id 7/9) alongside `torrent_url` still populated; the scheduled cron ingester (runs every 2 hours independently of this session) had already picked up the code change by the time this was checked and produced at least one real row with a populated `source_url` distinct from `torrent_url` (movie id 28, `https://yts.gg/movies/achilles-returns-2026`), confirming the fetcher/dedup path works against the live feed unattended. All four Movies view combinations (`read`×`flagged`) were queried via the API and returned successfully post-migration. **Not verified live:** the actual click-through in a browser (title opening the source page, IMDb badge becoming clickable, N/A badges staying plain) — no GUI browser is available in this environment (same limitation noted in M16/M18); verified by code review instead, reusing `RatingBadge`'s existing, unmodified `href`-wrapping and N/A short-circuit logic. The current dataset also didn't happen to include a null-`imdb_rating` (N/A) movie in the unread/flagged view at verification time to visually confirm against, though the code path is unchanged from what M1–M18 already exercised.
+
+## M20 — Duplicate Toolbar at Bottom of List (Movies/Series/News/Design)
+
+### Scope
+- Feature request: repeat each tab's top "toolbar" (view toggles, category/mode toggles, item count, Mark All Read / Ignore All / Export) at the bottom of the list, so it's usable after scrolling down instead of only at the top. Applies to Movies, Series, News, and Design; the Saved tab has no equivalent toolbar (just an Export button and count, no view toggles) and was left as-is.
+- Bottom copy only renders when the list has content — not during loading, not on an empty list — so an empty view never shows two toolbars stacked with nothing in between.
+
+### Files changed
+- `src/webui/static/app.js` — extracted four new components: `MoviesToolbar`, `SeriesToolbar`, `NewsFeedToolbar` (wraps the existing `FeedToolbar`), `DesignFeedToolbar`. Each tab's render now instantiates its toolbar component twice — once above the list (previous location, now via the component) and once below, passing a `className="movies-toolbar-bottom"` on the bottom instance. `SeriesTab`'s series-list `.map()` was wrapped in an outer `html` template so the bottom toolbar could be appended as a sibling after the mapped array, matching the pattern already used in `NewsFeedView`/`MoviesTab`/`DesignFeedView`.
+- `src/webui/static/styles.css` — new `.movies-toolbar-bottom` modifier (top border + `margin-top`) so the repeated bar reads as a footer, not a rendering glitch; `.movies-toolbar` gained `flex-wrap: wrap` since the Series toolbar (3 toggle groups + count + 2 buttons) is the widest and most likely to overflow on narrow viewports.
+- `docs/01-requirements/Requirements.md` — added FR-105 and AC-053.
+
+### Key decisions
+- **Extracted components instead of literally duplicating the JSX markup, and instead of hoisting one rendered template into a variable and reusing it twice in the tree.** Preact attaches internal bookkeeping (`_dom`, `_component`, etc.) directly onto a vnode object as it renders; reusing the exact same vnode instance at two positions in the tree is a documented Preact anti-pattern (the second occurrence's render overwrites refs the first occurrence needs). A component function invoked twice via `<${Toolbar} .../>` produces two independent vnodes from the same markup/props each time, which is safe and also keeps the markup defined in exactly one place per tab.
+- **Gate the bottom toolbar on non-empty, non-loading state** — matches the existing top-toolbar placement precedent (it's always visible regardless of loading, but there's nothing to duplicate below an empty or not-yet-loaded list).
+- **`SeriesToolbar` takes the full prop set** (read toggle, category, view mode, count, mark-all, ignore-all) rather than being split into smaller pieces — mirrors how the inline JSX was already one block before this change; splitting further wasn't asked for and would add surface area for no behavioral gain.
+
+### Edge cases to handle
+- List transitions from non-empty to empty (e.g. "Mark All Read" clears the whole view) — bottom toolbar disappears along with the list content in the same render, no separate cleanup needed since it's inside the same conditional branch as the list.
+- Series tab specifically: the bottom toolbar sits after the full season/episode tree, which can be long — verified the `SeriesToolbar` component reads `category`/`viewMode`/`isRead` from the same parent state as the top copy, so toggling from either copy affects the whole tab identically (no separate/stale state).
+
+### How to test locally (M20)
+1. `node --check src/webui/static/app.js` — syntax check (this file is plain JS with `htm` tagged templates, not JSX, so `node --check` parses it directly)
+2. Start the web app; on each of Movies, Series, News, and Design: confirm the toolbar appears both above and below the list when there are items, confirm clicking any control (Unread/Read, category, Mark All Read, etc.) from the *bottom* copy behaves identically to clicking it from the top copy
+3. Toggle to an empty view (e.g. Read toggle with no read items yet) — confirm only the top toolbar remains, no bottom toolbar with nothing below it
+4. Confirm the Saved tab is unchanged (Export button + count only, no duplicated bar)
+
+**Verified:** `node --check src/webui/static/app.js` passed. **Not verified live:** actual browser rendering/click-through — no GUI browser available in this environment (same limitation noted in M16/M18/M19); verified by code review, reusing each tab's existing, unmodified state/handlers so the bottom toolbar drives the same `fetch`/`setState` calls the top toolbar already exercised pre-change.

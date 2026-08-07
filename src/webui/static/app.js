@@ -257,6 +257,36 @@ function MovieCard({ movie, onMarkRead, onMarkUnread, onEnrich, onSaveEntry }) {
     `;
 }
 
+// Movies toolbar — mounted above and below the list (FR-105) so the view
+// toggles/count/Mark All Read stay reachable without scrolling back up.
+// Extracted to a component (not a shared vnode) since Preact mutates
+// internal refs on a vnode when it renders — reusing the same rendered
+// vnode instance at two spots in the tree is unsafe.
+function MoviesToolbar({ isRead, onToggleRead, isFlagged, onToggleFlagged, totalCount, onMarkAllRead, markingAll, className = "" }) {
+    return html`
+        <div className=${`movies-toolbar ${className}`}>
+            <div className="view-toggle">
+                <button className=${`btn btn-sm ${!isRead ? "btn-active" : "btn-secondary"}`}
+                    onClick=${() => isRead && onToggleRead()}>Unread</button>
+                <button className=${`btn btn-sm ${isRead ? "btn-active" : "btn-secondary"}`}
+                    onClick=${() => !isRead && onToggleRead()}>Read</button>
+            </div>
+            <div className="view-toggle">
+                <button className=${`btn btn-sm ${isFlagged ? "btn-active" : "btn-secondary"}`}
+                    onClick=${() => !isFlagged && onToggleFlagged()}>Flagged</button>
+                <button className=${`btn btn-sm ${!isFlagged ? "btn-active" : "btn-secondary"}`}
+                    onClick=${() => isFlagged && onToggleFlagged()}>Un-Flagged</button>
+            </div>
+            <div className="tab-count">${totalCount} movies</div>
+            ${!isRead && html`
+                <button className="btn btn-secondary btn-sm" onClick=${onMarkAllRead} disabled=${markingAll}>
+                    ${markingAll ? "..." : "Mark All Read"}
+                </button>
+            `}
+        </div>
+    `;
+}
+
 function MoviesTab() {
     const [sections, setSections] = useState([]);
     const [totalCount, setTotalCount] = useState(0);
@@ -322,28 +352,11 @@ function MoviesTab() {
 
     if (error) return html`<div className="error">${error}</div>`;
 
+    const toolbarProps = { isRead, onToggleRead: handleToggleRead, isFlagged, onToggleFlagged: handleToggleFlagged, totalCount, onMarkAllRead: handleMarkAllRead, markingAll };
+
     return html`
         <div>
-            <div className="movies-toolbar">
-                <div className="view-toggle">
-                    <button className=${`btn btn-sm ${!isRead ? "btn-active" : "btn-secondary"}`}
-                        onClick=${() => !isRead || handleToggleRead()}>Unread</button>
-                    <button className=${`btn btn-sm ${isRead ? "btn-active" : "btn-secondary"}`}
-                        onClick=${() => isRead || handleToggleRead()}>Read</button>
-                </div>
-                <div className="view-toggle">
-                    <button className=${`btn btn-sm ${isFlagged ? "btn-active" : "btn-secondary"}`}
-                        onClick=${() => isFlagged || handleToggleFlagged()}>Flagged</button>
-                    <button className=${`btn btn-sm ${!isFlagged ? "btn-active" : "btn-secondary"}`}
-                        onClick=${() => !isFlagged || handleToggleFlagged()}>Un-Flagged</button>
-                </div>
-                <div className="tab-count">${totalCount} movies</div>
-                ${!isRead && html`
-                    <button className="btn btn-secondary btn-sm" onClick=${handleMarkAllRead} disabled=${markingAll}>
-                        ${markingAll ? "..." : "Mark All Read"}
-                    </button>
-                `}
-            </div>
+            <${MoviesToolbar} ...${toolbarProps} />
             ${loading
                 ? html`<div className="loading">Loading movies...</div>`
                 : sections.length === 0
@@ -351,20 +364,23 @@ function MoviesTab() {
                         <p>${isRead ? "No read movies in this view." : "No movies to display. Run the ingester first:"}</p>
                         ${!isRead && html`<code>python src/cli/main.py</code>`}
                     </div>`
-                    : sections.map((section, i) => html`
-                        <section key=${i} className="year-section">
-                            <h2 className="year-header">${section.label}</h2>
-                            <div className="movie-grid">
-                                ${section.movies.map(movie => html`
-                                    <${MovieCard} key=${movie.id} movie=${movie}
-                                        onMarkRead=${!isRead ? removeFromView : undefined}
-                                        onMarkUnread=${isRead ? removeFromView : undefined}
-                                        onEnrich=${handleEnrich}
-                                        onSaveEntry=${handleSaveEntry} />
-                                `)}
-                            </div>
-                        </section>
-                    `)
+                    : html`
+                        ${sections.map((section, i) => html`
+                            <section key=${i} className="year-section">
+                                <h2 className="year-header">${section.label}</h2>
+                                <div className="movie-grid">
+                                    ${section.movies.map(movie => html`
+                                        <${MovieCard} key=${movie.id} movie=${movie}
+                                            onMarkRead=${!isRead ? removeFromView : undefined}
+                                            onMarkUnread=${isRead ? removeFromView : undefined}
+                                            onEnrich=${handleEnrich}
+                                            onSaveEntry=${handleSaveEntry} />
+                                    `)}
+                                </div>
+                            </section>
+                        `)}
+                        <${MoviesToolbar} ...${toolbarProps} className="movies-toolbar-bottom" />
+                    `
             }
         </div>
     `;
@@ -492,6 +508,22 @@ function NewsDateSection({ group, feedName, isRead, RowComponent, onRemove, onSa
 // News feed views
 // ---------------------------------------------------------------------------
 
+// News feed toolbar — mounted above and below the list (FR-105); see the
+// note on MoviesToolbar for why this is a component rather than a reused vnode.
+function NewsFeedToolbar({ isRead, onToggleRead, feedName, onMarkAllRead, markingAll, className = "" }) {
+    return html`
+        <div className=${`movies-toolbar ${className}`}>
+            <div className="view-toggle">
+                <button className=${`btn btn-sm ${!isRead ? "btn-active" : "btn-secondary"}`}
+                    onClick=${() => isRead && onToggleRead()}>Unread</button>
+                <button className=${`btn btn-sm ${isRead ? "btn-active" : "btn-secondary"}`}
+                    onClick=${() => !isRead && onToggleRead()}>Read</button>
+            </div>
+            <${FeedToolbar} feedName=${feedName} isRead=${isRead} onMarkAllRead=${onMarkAllRead} markingAll=${markingAll} showMarkAll=${!isRead} />
+        </div>
+    `;
+}
+
 function NewsFeedView({ feedName, emptyMessage, RowComponent }) {
     const [isRead, setIsRead] = useState(false);
     const [items, setItems] = useState([]);
@@ -533,24 +565,21 @@ function NewsFeedView({ feedName, emptyMessage, RowComponent }) {
         setMarkingAll(false);
     };
 
+    const toolbarProps = { isRead, onToggleRead: handleToggleRead, feedName, onMarkAllRead: handleMarkAllRead, markingAll };
+
     return html`
         <div>
-            <div className="movies-toolbar">
-                <div className="view-toggle">
-                    <button className=${`btn btn-sm ${!isRead ? "btn-active" : "btn-secondary"}`}
-                        onClick=${() => !isRead || handleToggleRead()}>Unread</button>
-                    <button className=${`btn btn-sm ${isRead ? "btn-active" : "btn-secondary"}`}
-                        onClick=${() => isRead || handleToggleRead()}>Read</button>
-                </div>
-                <${FeedToolbar} feedName=${feedName} isRead=${isRead} onMarkAllRead=${handleMarkAllRead} markingAll=${markingAll} showMarkAll=${!isRead} />
-            </div>
+            <${NewsFeedToolbar} ...${toolbarProps} />
             ${loading
                 ? html`<div className="loading">Loading...</div>`
                 : items.length === 0
                     ? html`<div className="empty-state">${isRead ? "No read items." : emptyMessage}</div>`
-                    : groupNewsByDate(items).map(group => html`
-                        <${NewsDateSection} key=${group.label} group=${group} feedName=${feedName} isRead=${isRead} RowComponent=${RowComponent} onRemove=${handleRemove} onSaveEntry=${handleSaveEntry} />
-                    `)
+                    : html`
+                        ${groupNewsByDate(items).map(group => html`
+                            <${NewsDateSection} key=${group.label} group=${group} feedName=${feedName} isRead=${isRead} RowComponent=${RowComponent} onRemove=${handleRemove} onSaveEntry=${handleSaveEntry} />
+                        `)}
+                        <${NewsFeedToolbar} ...${toolbarProps} className="movies-toolbar-bottom" />
+                    `
             }
         </div>
     `;
@@ -666,6 +695,51 @@ function NewsTab({ initialTag, initialFeedName }) {
 // ---------------------------------------------------------------------------
 // Series tab
 // ---------------------------------------------------------------------------
+
+// Series toolbar — mounted above and below the list (FR-105); see the note
+// on MoviesToolbar for why this is a component rather than a reused vnode.
+function SeriesToolbar({
+    isRead, onToggleRead, category, onSelectCategory, viewMode, onSetViewMode,
+    seriesCount, onMarkAllRead, markingAll, onIgnoreAll, ignoringAll, className = "",
+}) {
+    return html`
+        <div className=${`movies-toolbar ${className}`}>
+            <div className="view-toggle">
+                <button className=${`btn btn-sm ${!isRead ? "btn-active" : "btn-secondary"}`}
+                    onClick=${() => isRead && onToggleRead()}>Unread</button>
+                <button className=${`btn btn-sm ${isRead ? "btn-active" : "btn-secondary"}`}
+                    onClick=${() => !isRead && onToggleRead()}>Read</button>
+            </div>
+            <div className="view-toggle">
+                <button className=${`btn btn-sm ${category === "inbox" ? "btn-active" : "btn-secondary"}`}
+                    onClick=${() => onSelectCategory("inbox")}>Inbox</button>
+                <button className=${`btn btn-sm ${category === "ongoing" ? "btn-active" : "btn-secondary"}`}
+                    onClick=${() => onSelectCategory("ongoing")}>OnGoing</button>
+                <button className=${`btn btn-sm ${category === "following" ? "btn-active" : "btn-secondary"}`}
+                    onClick=${() => onSelectCategory("following")}>Following</button>
+                <button className=${`btn btn-sm ${category === "ignored" ? "btn-active" : "btn-secondary"}`}
+                    onClick=${() => onSelectCategory("ignored")}>Ignored</button>
+            </div>
+            <div className="view-toggle">
+                <button className=${`btn btn-sm ${viewMode === "title" ? "btn-active" : "btn-secondary"}`}
+                    onClick=${() => onSetViewMode("title")}>Only Title</button>
+                <button className=${`btn btn-sm ${viewMode === "full" ? "btn-active" : "btn-secondary"}`}
+                    onClick=${() => onSetViewMode("full")}>Full</button>
+            </div>
+            <div className="tab-count">${seriesCount} series</div>
+            ${!isRead && html`
+                <button className="btn btn-secondary btn-sm" onClick=${onMarkAllRead} disabled=${markingAll}>
+                    ${markingAll ? "..." : "Mark All Read"}
+                </button>
+            `}
+            ${category !== "ignored" && html`
+                <button className="btn btn-secondary btn-sm" onClick=${onIgnoreAll} disabled=${ignoringAll}>
+                    ${ignoringAll ? "..." : "Ignore All"}
+                </button>
+            `}
+        </div>
+    `;
+}
 
 function SeriesTab() {
     const [isRead, setIsRead] = useState(false);
@@ -794,43 +868,15 @@ function SeriesTab() {
     if (loading) return html`<div className="loading">Loading series...</div>`;
     if (error) return html`<div className="error">${error}</div>`;
 
+    const toolbarProps = {
+        isRead, onToggleRead: handleToggleRead, category, onSelectCategory: handleSelectCategory,
+        viewMode, onSetViewMode: handleSetViewMode, seriesCount: seriesList.length,
+        onMarkAllRead: handleMarkAllRead, markingAll, onIgnoreAll: handleIgnoreAll, ignoringAll,
+    };
+
     return html`
         <div className="series-tab">
-            <div className="movies-toolbar">
-                <div className="view-toggle">
-                    <button className=${`btn btn-sm ${!isRead ? "btn-active" : "btn-secondary"}`}
-                        onClick=${() => !isRead || handleToggleRead()}>Unread</button>
-                    <button className=${`btn btn-sm ${isRead ? "btn-active" : "btn-secondary"}`}
-                        onClick=${() => isRead || handleToggleRead()}>Read</button>
-                </div>
-                <div className="view-toggle">
-                    <button className=${`btn btn-sm ${category === "inbox" ? "btn-active" : "btn-secondary"}`}
-                        onClick=${() => handleSelectCategory("inbox")}>Inbox</button>
-                    <button className=${`btn btn-sm ${category === "ongoing" ? "btn-active" : "btn-secondary"}`}
-                        onClick=${() => handleSelectCategory("ongoing")}>OnGoing</button>
-                    <button className=${`btn btn-sm ${category === "following" ? "btn-active" : "btn-secondary"}`}
-                        onClick=${() => handleSelectCategory("following")}>Following</button>
-                    <button className=${`btn btn-sm ${category === "ignored" ? "btn-active" : "btn-secondary"}`}
-                        onClick=${() => handleSelectCategory("ignored")}>Ignored</button>
-                </div>
-                <div className="view-toggle">
-                    <button className=${`btn btn-sm ${viewMode === "title" ? "btn-active" : "btn-secondary"}`}
-                        onClick=${() => handleSetViewMode("title")}>Only Title</button>
-                    <button className=${`btn btn-sm ${viewMode === "full" ? "btn-active" : "btn-secondary"}`}
-                        onClick=${() => handleSetViewMode("full")}>Full</button>
-                </div>
-                <div className="tab-count">${seriesList.length} series</div>
-                ${!isRead && html`
-                    <button className="btn btn-secondary btn-sm" onClick=${handleMarkAllRead} disabled=${markingAll}>
-                        ${markingAll ? "..." : "Mark All Read"}
-                    </button>
-                `}
-                ${category !== "ignored" && html`
-                    <button className="btn btn-secondary btn-sm" onClick=${handleIgnoreAll} disabled=${ignoringAll}>
-                        ${ignoringAll ? "..." : "Ignore All"}
-                    </button>
-                `}
-            </div>
+            <${SeriesToolbar} ...${toolbarProps} />
             ${seriesList.length === 0
                 ? html`<div className="empty-state">
                     ${category === "ignored"
@@ -841,62 +887,65 @@ function SeriesTab() {
                         ? "No OnGoing series."
                         : html`<p>No series to display. Run the ingester first:</p><code>python src/cli/main.py</code>`}
                 </div>`
-                : seriesList.map(series => html`
-                    <div key=${series.id} className="series-block">
-                        <h2 className="series-title" onClick=${() => handleToggleCollapse(series.id)}>
-                            <span className="series-chevron">${isCollapsed(series.id) ? "▸" : "▾"}</span>
-                            <a href=${series.imdb_url} target="_blank" rel="noreferrer" onClick=${(e) => e.stopPropagation()}>${series.title}</a>
-                            <${SaveButton} className="series-save-btn" isSaved=${series.is_saved}
-                                saveUrl=${`/api/series/${series.id}/save`} onSave=${() => handleSaveEntry(series.id)} />
-                            ${isCollapsed(series.id) && html`
-                                <${Badge} className="episode-count-badge">${series.seasons.reduce((n, s) => n + s.episodes.length, 0)}</${Badge}>
-                            `}
-                            ${(category === "inbox" || category === "ongoing") && html`
-                                <button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${(e) => { e.stopPropagation(); handleFollow(series.id); }}>Follow</button>
-                                <button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${(e) => { e.stopPropagation(); handleIgnore(series.id); }}>Ignore</button>
-                            `}
-                            ${category === "following" && html`
-                                <button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${(e) => { e.stopPropagation(); handleUnfollow(series.id); }}>Unfollow</button>
-                                <button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${(e) => { e.stopPropagation(); handleIgnore(series.id); }}>Ignore</button>
-                            `}
-                            ${category === "ignored" && html`
-                                <button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${(e) => { e.stopPropagation(); handleUnignore(series.id); }}>Unignore</button>
-                            `}
-                        </h2>
-                        ${!isCollapsed(series.id) && series.seasons.map(season => html`
-                            <div key=${season.season} className="season-block">
-                                <h3 className="season-header">Season ${season.season}</h3>
-                                <div className="episode-list">
-                                    ${season.episodes.map(ep => html`
-                                        <div key=${ep.id} className="episode-row">
-                                            <span className="episode-label">E${String(ep.episode).padStart(2, "0")}</span>
-                                            <div className="episode-qualities">
-                                                ${ep.qualities.map((q, i) => html`
-                                                    <a key=${i} href=${q.torrent_page_url} target="_blank" rel="noreferrer" className="quality-link">
-                                                        <${Badge} className="quality-badge">${q.quality}</${Badge}>
-                                                    </a>
-                                                `)}
+                : html`
+                    ${seriesList.map(series => html`
+                        <div key=${series.id} className="series-block">
+                            <h2 className="series-title" onClick=${() => handleToggleCollapse(series.id)}>
+                                <span className="series-chevron">${isCollapsed(series.id) ? "▸" : "▾"}</span>
+                                <a href=${series.imdb_url} target="_blank" rel="noreferrer" onClick=${(e) => e.stopPropagation()}>${series.title}</a>
+                                <${SaveButton} className="series-save-btn" isSaved=${series.is_saved}
+                                    saveUrl=${`/api/series/${series.id}/save`} onSave=${() => handleSaveEntry(series.id)} />
+                                ${isCollapsed(series.id) && html`
+                                    <${Badge} className="episode-count-badge">${series.seasons.reduce((n, s) => n + s.episodes.length, 0)}</${Badge}>
+                                `}
+                                ${(category === "inbox" || category === "ongoing") && html`
+                                    <button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${(e) => { e.stopPropagation(); handleFollow(series.id); }}>Follow</button>
+                                    <button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${(e) => { e.stopPropagation(); handleIgnore(series.id); }}>Ignore</button>
+                                `}
+                                ${category === "following" && html`
+                                    <button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${(e) => { e.stopPropagation(); handleUnfollow(series.id); }}>Unfollow</button>
+                                    <button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${(e) => { e.stopPropagation(); handleIgnore(series.id); }}>Ignore</button>
+                                `}
+                                ${category === "ignored" && html`
+                                    <button className="btn btn-secondary btn-sm series-ignore-btn" onClick=${(e) => { e.stopPropagation(); handleUnignore(series.id); }}>Unignore</button>
+                                `}
+                            </h2>
+                            ${!isCollapsed(series.id) && series.seasons.map(season => html`
+                                <div key=${season.season} className="season-block">
+                                    <h3 className="season-header">Season ${season.season}</h3>
+                                    <div className="episode-list">
+                                        ${season.episodes.map(ep => html`
+                                            <div key=${ep.id} className="episode-row">
+                                                <span className="episode-label">E${String(ep.episode).padStart(2, "0")}</span>
+                                                <div className="episode-qualities">
+                                                    ${ep.qualities.map((q, i) => html`
+                                                        <a key=${i} href=${q.torrent_page_url} target="_blank" rel="noreferrer" className="quality-link">
+                                                            <${Badge} className="quality-badge">${q.quality}</${Badge}>
+                                                        </a>
+                                                    `)}
+                                                </div>
+                                                ${ep.feed_entry_date && html`
+                                                    <span className="episode-date">${new Date(ep.feed_entry_date).toLocaleDateString()}</span>
+                                                `}
+                                                ${!isRead && html`
+                                                    <button className="btn btn-read btn-sm" onClick=${() => handleMarkRead(ep.id)}>
+                                                        Mark Read
+                                                    </button>
+                                                `}
+                                                ${isRead && html`
+                                                    <button className="btn btn-secondary btn-sm" onClick=${() => handleMarkUnread(ep.id)}>
+                                                        Mark Unread
+                                                    </button>
+                                                `}
                                             </div>
-                                            ${ep.feed_entry_date && html`
-                                                <span className="episode-date">${new Date(ep.feed_entry_date).toLocaleDateString()}</span>
-                                            `}
-                                            ${!isRead && html`
-                                                <button className="btn btn-read btn-sm" onClick=${() => handleMarkRead(ep.id)}>
-                                                    Mark Read
-                                                </button>
-                                            `}
-                                            ${isRead && html`
-                                                <button className="btn btn-secondary btn-sm" onClick=${() => handleMarkUnread(ep.id)}>
-                                                    Mark Unread
-                                                </button>
-                                            `}
-                                        </div>
-                                    `)}
+                                        `)}
+                                    </div>
                                 </div>
-                            </div>
-                        `)}
-                    </div>
-                `)
+                            `)}
+                        </div>
+                    `)}
+                    <${SeriesToolbar} ...${toolbarProps} className="movies-toolbar-bottom" />
+                `
             }
         </div>
     `;
@@ -945,6 +994,27 @@ function DesignItemCard({ item, isReadView, onRemove, onSaveEntry }) {
     `;
 }
 
+// Design feed toolbar — mounted above and below the list (FR-105); see the
+// note on MoviesToolbar for why this is a component rather than a reused vnode.
+function DesignFeedToolbar({ isRead, onToggleRead, itemCount, onMarkAllRead, markingAll, className = "" }) {
+    return html`
+        <div className=${`movies-toolbar ${className}`}>
+            <div className="view-toggle">
+                <button className=${`btn btn-sm ${!isRead ? "btn-active" : "btn-secondary"}`}
+                    onClick=${() => isRead && onToggleRead()}>Unread</button>
+                <button className=${`btn btn-sm ${isRead ? "btn-active" : "btn-secondary"}`}
+                    onClick=${() => !isRead && onToggleRead()}>Read</button>
+            </div>
+            <div className="tab-count">${itemCount} items</div>
+            ${!isRead && html`
+                <button className="btn btn-secondary btn-sm" onClick=${onMarkAllRead} disabled=${markingAll}>
+                    ${markingAll ? "..." : "Mark All Read"}
+                </button>
+            `}
+        </div>
+    `;
+}
+
 function DesignFeedView({ feedName }) {
     const [isRead, setIsRead] = useState(false);
     const [items, setItems] = useState([]);
@@ -986,29 +1056,21 @@ function DesignFeedView({ feedName }) {
         setMarkingAll(false);
     };
 
+    const toolbarProps = { isRead, onToggleRead: handleToggleRead, itemCount: items.length, onMarkAllRead: handleMarkAllRead, markingAll };
+
     return html`
         <div>
-            <div className="movies-toolbar">
-                <div className="view-toggle">
-                    <button className=${`btn btn-sm ${!isRead ? "btn-active" : "btn-secondary"}`}
-                        onClick=${() => !isRead || handleToggleRead()}>Unread</button>
-                    <button className=${`btn btn-sm ${isRead ? "btn-active" : "btn-secondary"}`}
-                        onClick=${() => isRead || handleToggleRead()}>Read</button>
-                </div>
-                <div className="tab-count">${items.length} items</div>
-                ${!isRead && html`
-                    <button className="btn btn-secondary btn-sm" onClick=${handleMarkAllRead} disabled=${markingAll}>
-                        ${markingAll ? "..." : "Mark All Read"}
-                    </button>
-                `}
-            </div>
+            <${DesignFeedToolbar} ...${toolbarProps} />
             ${loading
                 ? html`<div className="loading">Loading...</div>`
                 : items.length === 0
                     ? html`<div className="empty-state">${isRead ? "No read items." : "No items yet."}</div>`
-                    : html`<div className="design-grid">
-                        ${items.map(item => html`<${DesignItemCard} key=${item.id} item=${item} isReadView=${isRead} onRemove=${handleRemove} onSaveEntry=${handleSaveEntry} />`)}
-                    </div>`
+                    : html`
+                        <div className="design-grid">
+                            ${items.map(item => html`<${DesignItemCard} key=${item.id} item=${item} isReadView=${isRead} onRemove=${handleRemove} onSaveEntry=${handleSaveEntry} />`)}
+                        </div>
+                        <${DesignFeedToolbar} ...${toolbarProps} className="movies-toolbar-bottom" />
+                    `
             }
         </div>
     `;

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added — Bottom Toolbar on Movies/Series/News/Design Tabs
+- Each tab's toolbar (view toggles, category/mode toggles, item count, Mark All Read / Ignore All / Export) now repeats at the bottom of the list, below the last item — so it's reachable without scrolling back to the top; shown only when the list has content (hidden during loading/empty states, alongside the existing top toolbar)
+- `app.js`: extracted `MoviesToolbar`, `SeriesToolbar`, `NewsFeedToolbar`, `DesignFeedToolbar` components (mirroring the existing `FeedToolbar` pattern) instead of duplicating the toolbar JSX inline — Preact mutates internal refs on a rendered vnode, so reusing the same vnode object at two spots in the tree is unsafe; a component instantiated twice avoids that while keeping the markup defined once
+- `styles.css`: new `.movies-toolbar-bottom` modifier (top border + spacing) so the repeated bar reads as a footer; `.movies-toolbar` gains `flex-wrap: wrap` so toolbars with many buttons (e.g. Series) wrap instead of overflowing on narrow viewports
+- Saved tab unaffected — it has no view-toggle toolbar, only an Export button and count
+- No DB schema change, no API change — frontend-only
+- See FR-105
+
 ### Fixed — Saved Tab Summary Text Clamped to 2 Lines
 - `.saved-summary` (Saved tab entry body text, M16/ADR-017) now clamps to a maximum of 2 lines with ellipsis overflow via CSS `line-clamp`, instead of rendering the full summary unbounded
 - CSS-only change — no JS or API changes

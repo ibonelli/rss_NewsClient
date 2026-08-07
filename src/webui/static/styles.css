@@ -88,8 +88,14 @@ body {
 .movies-toolbar {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 1rem;
     padding: 0.8rem 2rem;
+}
+
+.movies-toolbar-bottom {
+    border-top: 1px solid var(--border);
+    margin-top: 1rem;
 }
 
 .view-toggle {
