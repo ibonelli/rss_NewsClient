@@ -645,3 +645,58 @@ No markup, sorting, or grouping logic changes — pure CSS density pass.
 4. Confirm the Saved tab is unchanged (Export button + count only, no duplicated bar)
 
 **Verified:** `node --check src/webui/static/app.js` passed. **Not verified live:** actual browser rendering/click-through — no GUI browser available in this environment (same limitation noted in M16/M18/M19); verified by code review, reusing each tab's existing, unmodified state/handlers so the bottom toolbar drives the same `fetch`/`setState` calls the top toolbar already exercised pre-change.
+
+## M21 — Database Backup Script
+
+### Scope
+- One-shot script to back up the configured database, using `config.yaml` as the single source of the connection settings. Works for both supported backends (MySQL, SQLite).
+
+### Files changed
+- `tools/backup_db.sh` (new): bash wrapper; an inline Python step parses the URL, and the native dump tool does the work.
+- `.gitignore`: `backups/`.
+- `README.md` ("Backing up the DB"), `CLAUDE.md` (Commands).
+
+### Key decisions
+- **Hybrid bash + inline Python, same pattern as `tools/migrate_*.sh`.** Pure bash would need fragile YAML/URL parsing (no `yq` installed, URL-encoded passwords, `mysql+pymysql://` prefix) and would skip `load_config()`'s fallback to `config.yaml.example`. A pure-Python dumper would reimplement `mysqldump` badly. Python emits `shlex.quote`d assignments that bash `eval`s.
+- **`mysqldump --single-transaction`**: a consistent InnoDB snapshot without locking tables, so the cron pipeline and web UI keep running. `--no-tablespaces` avoids needing the PROCESS privilege on MySQL 8.
+- **Password via a temporary mode-600 `--defaults-extra-file`**, not `-p...` or `MYSQL_PWD`, so it never shows up in `ps` or the environment. Quotes and backslashes are escaped for the option-file syntax.
+- **SQLite via `sqlite3 .backup`**, not `cp`: it's consistent while the app holds the DB open.
+
+### Edge cases to handle
+- Dump failure (bad credentials, DB down): `pipefail` catches the `mysqldump` failure behind `gzip`, the partial file is removed, and the script exits 1.
+- Missing SQLite file or missing `mysqldump`/`sqlite3` binary: clear error and exit 1.
+- Pruning only matches `<dbname>-*.sql.gz` / `<dbname>-*.db.gz` in the output dir, so other files there are untouched.
+
+### How to test locally (M21)
+1. `tools/backup_db.sh /tmp/bk`, then `gunzip -c /tmp/bk/*.sql.gz | tail -1` shows `-- Dump completed`.
+2. SQLite: in a scratch copy with a SQLite `database.url`, run the script, gunzip, and query the restored file.
+3. Bad credentials: expect exit 1 and no file left behind.
+
+**Verified:** all three, against the local MySQL `pelis_feed` (940 KB dump, 9 tables) and a scratch SQLite DB; `BACKUP_KEEP_DAYS` pruning also checked with a backdated file.
+
+## M22 — Cron Pipeline Emails Only on Errors
+
+### Scope
+- The cron job emailed the full run output (INFO/WARNING) on every run, to `ignacio@mail.nachodigital.com.ar` instead of `ignacio@nachodigital.com.ar`. Goal: no email on clean runs; on errors, email only that run's log section to an explicit address.
+
+### Files changed
+- `run_pipeline.sh`: keeps the original stdout on fd 3 before redirecting to the log, records the log's byte offset at run start, and runs a `trap report_on_error EXIT` that greps this run's section and prints a report to fd 3 only on a non-zero exit or error lines. Python steps run as `cmd || EXIT=$?`.
+- `README.md` (Cron setup, backup cron line), `CLAUDE.md` (Cron).
+
+### Key decisions
+- **Deliver through cron's own `MAILTO` + Postfix, not the app's SMTP alerter (`src/cli/alerter.py`).** The error path must still work when Python or `config.yaml` is what's broken. Cron mailing through Postfix was already proven to deliver. No new config keys or Python code.
+- **Wrong domain is a cron/Postfix default, not an app bug.** Without `MAILTO`, cron mails the bare local user, and Postfix qualifies it with `$myorigin` (default `$myhostname` = `mail.nachodigital.com.ar`). Fixed by an explicit full `MAILTO`; optionally `myorigin = $mydomain` server-wide.
+- **Error detection = exit code OR `' (ERROR|CRITICAL) |^Traceback'` in this run's log section.** Several failures are logged at ERROR without a non-zero exit (feed fetch failures, per-item dedup errors, alert-send failure), so the exit code alone would miss them. The pattern matches the `%(levelname)s` field of the `basicConfig` format in `src/cli/main.py`/`filter.py`.
+- **Byte offset, not line count or timestamps**, to slice this run's section. It survives rotation: the offset is taken after the rotate step, so a freshly rotated log starts at 0.
+
+### Edge cases to handle
+- A feed that's down logs `ERROR` every run, so emails repeat every run until it recovers. This is intended ("email if there is an ERROR"), and separate from the once-per-outage SMTP downtime alert in `alerter.py`.
+- Ingester crash: filter is reported as `not run`. Unexpected script failure: the `EXIT` trap still reports.
+- A crontab line that redirects the script's output would swallow the report, as documented.
+
+### How to test locally (M22)
+1. Clean run: `./run_pipeline.sh > out.txt 2>&1; echo $?` gives empty `out.txt` and exit 0.
+2. Stub `.venv/bin/python3` in a scratch copy to emit an ERROR line with exit 0, and separately a Traceback with exit 1. Expect a report with only that run's section in each case.
+3. On the server: `echo test | mail -s test ignacio@nachodigital.com.ar` confirms Postfix routes the full address.
+
+**Verified:** steps 1–2. Stub modes clean ×2 / logged-ERROR / crash produced no output, a report, and a report with exit 1; a real end-to-end run against a scratch SQLite DB produced no output and exit 0. **Not verified:** server-side delivery (step 3); the crontab change has to be made on the server.

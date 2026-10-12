@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Changed — M22: Cron Pipeline Emails Only on Errors
+- `run_pipeline.sh` is now silent on a clean run, so cron no longer emails every INFO/WARNING line. When a run exits non-zero or its log section contains an ` ERROR ` / ` CRITICAL ` / `Traceback` line, the script prints a report to its original stdout: a summary (host, exit codes, error-line count), the matching lines, and only that run's log section. Cron mails it to `MAILTO`.
+- Fixed: under `set -e`, a failing ingester aborted the script before the existing exit-code check ran, so "skipping filter processor" was dead code. The Python steps now run as `cmd || EXIT=$?`.
+- The report runs from a `trap ... EXIT`, so it also fires on unexpected script failures.
+- README/CLAUDE.md: the crontab must set `MAILTO` to a full address (a bare local user gets Postfix's `$myorigin`, e.g. `mail.nachodigital.com.ar`) and must not redirect the script's output. Backup cron example changed to mail only on failure.
+- No Python, DB schema, or API changes.
+
+### Added — M21: Database Backup Script
+- New `tools/backup_db.sh [OUTPUT_DIR]` reads `database.url` through `load_config()` and SQLAlchemy `make_url()`, then writes a timestamped gzip backup to `./backups/` (git-ignored) or `OUTPUT_DIR`. MySQL uses `mysqldump --single-transaction --routines --triggers --no-tablespaces --default-character-set=utf8mb4`; SQLite uses `sqlite3 .backup`. Both are safe while the web UI is running.
+- The MySQL password goes through a temporary mode-600 `--defaults-extra-file`, never argv. A failed dump exits non-zero and removes the partial file.
+- `BACKUP_KEEP_DAYS=N` prunes this database's backups older than N days.
+- No DB schema, API, or app code changes.
+
 ### Added — Bottom Toolbar on Movies/Series/News/Design Tabs
 - Each tab's toolbar (view toggles, category/mode toggles, item count, Mark All Read / Ignore All / Export) now repeats at the bottom of the list, below the last item — so it's reachable without scrolling back to the top; shown only when the list has content (hidden during loading/empty states, alongside the existing top toolbar)
 - `app.js`: extracted `MoviesToolbar`, `SeriesToolbar`, `NewsFeedToolbar`, `DesignFeedToolbar` components (mirroring the existing `FeedToolbar` pattern) instead of duplicating the toolbar JSX inline — Preact mutates internal refs on a rendered vnode, so reusing the same vnode object at two spots in the tree is unsafe; a component instantiated twice avoids that while keeping the markup defined once

@@ -57,8 +57,15 @@ run_pipeline.sh
 To run it every 15 mins you use:
 
 ```
-*/15 * * * * cd /home/ignacio/bin/rss_NewsClient && run_pipeline.sh
+MAILTO="ignacio@nachodigital.com.ar"
+*/15 * * * * cd /home/ignacio/bin/rss_NewsClient && ./run_pipeline.sh
 ```
+
+`run_pipeline.sh` writes everything to `logs/pelis_feed_pipeline.log` and prints **nothing** on a clean run, so cron sends no email. If a run exits non-zero or logs an `ERROR` / `CRITICAL` / `Traceback` line, it prints a report (the error lines plus that run's log section), and cron mails it to `MAILTO`.
+
+- Don't redirect the script's output in the crontab line (`>> file 2>&1`), and don't call `src/cli/*.py` directly: either one bypasses the report (or mails every INFO/WARNING line).
+- Always set `MAILTO` to a full address. Without it, cron mails the bare local user, and Postfix appends `$myorigin` (by default the hostname, e.g. `mail.nachodigital.com.ar`). To fix that for all local mail: `sudo postconf -e 'myorigin = $mydomain' && sudo systemctl reload postfix`.
+- Feed fetch failures are logged at `ERROR`, so a feed that's down triggers an email on every run until it recovers.
 
 ## Running the UI
 
@@ -119,10 +126,10 @@ tools/backup_db.sh                      # -> backups/pelis_feed-YYYYMMDD-HHMMSS.
 BACKUP_KEEP_DAYS=14 tools/backup_db.sh  # also delete backups older than 14 days
 ```
 
-Daily cron example:
+Daily cron example (silent on success; on failure prints one line, which cron mails to `MAILTO`):
 
 ```
-30 3 * * * cd /home/ignacio/bin/rss_NewsClient && BACKUP_KEEP_DAYS=14 tools/backup_db.sh >> logs/backup.log 2>&1
+30 3 * * * cd /home/ignacio/bin/rss_NewsClient && { BACKUP_KEEP_DAYS=14 tools/backup_db.sh >> logs/backup.log 2>&1 || echo "DB backup failed, see logs/backup.log"; }
 ```
 
 Restore (MySQL): `gunzip -c backups/FILE.sql.gz | mysql -u USER -p pelis_feed`

@@ -43,8 +43,10 @@ tools/backup_db.sh [OUTPUT_DIR]   # default ./backups (git-ignored); BACKUP_KEEP
 
 **Cron (typical, every 2h):**
 ```
+MAILTO="user@example.com"
 0 */2 * * * cd /path/to/repo && ./run_pipeline.sh
 ```
+`run_pipeline.sh` logs everything to `logs/pelis_feed_pipeline.log` and prints nothing unless the run exits non-zero or logs `ERROR`/`CRITICAL`/`Traceback`; then it prints that run's log section, which cron mails to `MAILTO`. Don't redirect its output in the crontab line.
 
 ## Architecture
 
