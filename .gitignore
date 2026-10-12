@@ -11,3 +11,4 @@ build/
 .claude
 crontab*
 tests/
+backups/

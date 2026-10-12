@@ -110,6 +110,23 @@ After exporting from the UI you get json files which you can use with Claude com
 run_ai_filtering.sh
 ```
 
+## Backing up the DB
+
+`tools/backup_db.sh` reads `database.url` from `config.yaml` and writes a timestamped, gzipped backup to `./backups/` (git-ignored) or to the directory given as first argument. MySQL uses `mysqldump --single-transaction`; SQLite uses `sqlite3 .backup`. Both are safe while the web UI is running.
+
+```bash
+tools/backup_db.sh                      # -> backups/pelis_feed-YYYYMMDD-HHMMSS.sql.gz
+BACKUP_KEEP_DAYS=14 tools/backup_db.sh  # also delete backups older than 14 days
+```
+
+Daily cron example:
+
+```
+30 3 * * * cd /home/ignacio/bin/rss_NewsClient && BACKUP_KEEP_DAYS=14 tools/backup_db.sh >> logs/backup.log 2>&1
+```
+
+Restore (MySQL): `gunzip -c backups/FILE.sql.gz | mysql -u USER -p pelis_feed`
+
 ## Clean Up DB to restart
 
 ```sql
