@@ -11,7 +11,7 @@
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PYTHON="${REPO_DIR}/.venv/bin/python3"
+PYTHON="${REPO_DIR}/venv/bin/python"
 LOG_DIR="${REPO_DIR}/logs"
 LOG_FILE="${LOG_DIR}/pelis_feed_pipeline.log"
 MAX_LOG_BYTES=5242880  # 5 MB
